@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { version } from "../package.json";
   import { listen } from "@tauri-apps/api/event";
   import { api, native, preview } from "./lib/api";
   import {
@@ -35,6 +36,7 @@
     { id: "recommendations", label: "Model advice" },
     { id: "settings", label: "Settings" },
   ];
+  const isWindows = /Windows/i.test(navigator.userAgent);
   let page = $state<Page>("overview");
   let overview = $state<Overview | null>(null);
   let history = $state<HistoryPage>({ items: [], total: 0 });
@@ -305,6 +307,19 @@
     void page;
     window.scrollTo({ top: 0, left: 0 });
   });
+  $effect(() => {
+    const theme = settings?.theme ?? "black";
+    const system = window.matchMedia("(prefers-color-scheme: dark)");
+    const apply = () => {
+      document.documentElement.dataset.theme =
+        theme === "system" ? (system.matches ? "slate" : "light") : theme;
+    };
+    apply();
+    if (theme === "system") {
+      system.addEventListener("change", apply);
+      return () => system.removeEventListener("change", apply);
+    }
+  });
   onMount(() => {
     disposed = false;
     ready = true;
@@ -369,7 +384,7 @@
           >{overview?.settings.deviceName ?? "This computer"}</span
         >
       </div>
-      <span class="version">Version 0.1.0</span>
+      <span class="version">Version {version}</span>
     </div>
   </aside>
   <main>
@@ -463,6 +478,7 @@
             (snapshot) => snapshot.provider === "claude",
           )}
           {now}
+          display={settings?.meterDisplay ?? "remaining"}
           {reconnect}
         /><QuotaCard
           provider="claude"
@@ -471,12 +487,14 @@
             (snapshot) => snapshot.provider === "claude",
           )}
           {now}
+          display={settings?.meterDisplay ?? "remaining"}
           {reconnect}
         /><QuotaCard
           provider="codex"
           period="weekly"
           snapshot={snapshots.find((snapshot) => snapshot.provider === "codex")}
           {now}
+          display={settings?.meterDisplay ?? "remaining"}
           {reconnect}
         />
       </section>
@@ -573,18 +591,59 @@
         </section>{/if}
       {#if stats?.quotaAllocations?.length}
         <section class="panel model-panel" aria-label="Quota accounting">
-          <div class="panel-heading"><h2>Quota accounting</h2><span class="subtle">Changes between saved readings</span></div>
-          <p class="fineprint">Percentage-point changes across recorded windows. Prompt attribution is estimated; overlapping or unseen work stays unallocated. Gaps and resets leave incomplete coverage.</p>
-          <div class="table-scroll"><table>
-            <thead><tr><th>Allowance</th><th class="numeric">Observed</th><th class="numeric">Attributed</th><th class="numeric">Unallocated</th><th class="numeric">Gaps</th></tr></thead>
-            <tbody>{#each stats.quotaAllocations as allocation}<tr>
-              <td>{providerName(allocation.provider)} <span class="subtle">{allocation.windowId.replace(allocation.provider + ":", "").replace("10080", "weekly").replace("300", "5-hour")}</span><small class="subtle"> · {allocation.accountId.slice(-6)}</small></td>
-              <td class="numeric">{allocation.observedPercent == null ? "—" : allocation.observedPercent.toFixed(1) + " pp"}</td>
-              <td class="numeric">{allocation.allocatedPercent == null ? "—" : allocation.allocatedPercent.toFixed(1) + " pp"}</td>
-              <td class="numeric">{allocation.unallocatedPercent == null ? "—" : allocation.unallocatedPercent.toFixed(1) + " pp"}</td>
-              <td class="numeric">{count(allocation.gapCount)}</td>
-            </tr>{/each}</tbody>
-          </table></div>
+          <div class="panel-heading">
+            <h2>Quota accounting</h2>
+            <span class="subtle">Changes between saved readings</span>
+          </div>
+          <p class="fineprint">
+            Percentage-point changes across recorded windows. Prompt attribution
+            is estimated; overlapping or unseen work stays unallocated. Gaps and
+            resets leave incomplete coverage.
+          </p>
+          <div class="table-scroll">
+            <table>
+              <thead
+                ><tr
+                  ><th>Allowance</th><th class="numeric">Observed</th><th
+                    class="numeric">Attributed</th
+                  ><th class="numeric">Unallocated</th><th class="numeric"
+                    >Gaps</th
+                  ></tr
+                ></thead
+              >
+              <tbody
+                >{#each stats.quotaAllocations as allocation}<tr>
+                    <td
+                      >{providerName(allocation.provider)}
+                      <span class="subtle"
+                        >{allocation.windowId
+                          .replace(allocation.provider + ":", "")
+                          .replace("10080", "weekly")
+                          .replace("300", "5-hour")}</span
+                      ><small class="subtle">
+                        · {allocation.accountId.slice(-6)}</small
+                      ></td
+                    >
+                    <td class="numeric"
+                      >{allocation.observedPercent == null
+                        ? "—"
+                        : allocation.observedPercent.toFixed(1) + " pp"}</td
+                    >
+                    <td class="numeric"
+                      >{allocation.allocatedPercent == null
+                        ? "—"
+                        : allocation.allocatedPercent.toFixed(1) + " pp"}</td
+                    >
+                    <td class="numeric"
+                      >{allocation.unallocatedPercent == null
+                        ? "—"
+                        : allocation.unallocatedPercent.toFixed(1) + " pp"}</td
+                    >
+                    <td class="numeric">{count(allocation.gapCount)}</td>
+                  </tr>{/each}</tbody
+              >
+            </table>
+          </div>
         </section>
       {/if}
       <footer class="page-footer">
@@ -944,6 +1003,52 @@
       </section>
     {:else if page === "settings"}
       {#if settings}<div class="settings-layout">
+          <section class="panel settings-panel appearance-panel">
+            <div class="panel-heading">
+              <div>
+                <h2>Appearance</h2>
+                <p>Make the meters comfortable to glance at.</p>
+              </div>
+            </div>
+            <label class="form-field"
+              >Color theme<select
+                bind:value={settings.theme}
+                onchange={() => (dirty = true)}
+              >
+                <option value="black">Black</option><option value="slate"
+                  >Slate</option
+                ><option value="midnight">Midnight</option><option value="light"
+                  >Light</option
+                ><option value="system">System</option>
+              </select></label
+            >
+            <label class="form-field"
+              >Meter percentages<select
+                bind:value={settings.meterDisplay}
+                onchange={() => (dirty = true)}
+              >
+                <option value="remaining">Percentage left</option><option
+                  value="used">Percentage used</option
+                >
+              </select></label
+            >
+            {#if isWindows}<label class="toggle-row"
+                ><span
+                  ><strong>Anchor to taskbar</strong><small
+                    >Lock the strip against the taskbar edge. Turn off to drag
+                    it freely.</small
+                  ></span
+                ><input
+                  type="checkbox"
+                  bind:checked={settings.anchorToTaskbar}
+                  onchange={() => (dirty = true)}
+                /><span class="switch" aria-hidden="true"></span></label
+              >{/if}
+            <p class="fineprint">
+              Theme applies to the dashboard and Windows strip. macOS menu-bar
+              colors follow the system.
+            </p>
+          </section>
           <section class="panel settings-panel">
             <div class="panel-heading">
               <div>

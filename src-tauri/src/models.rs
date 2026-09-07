@@ -215,6 +215,43 @@ pub struct ImportReport {
     pub warnings: Vec<String>,
 }
 
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ColorTheme {
+    #[default]
+    Black,
+    Slate,
+    Midnight,
+    Light,
+    System,
+}
+
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum MeterDisplay {
+    #[default]
+    Remaining,
+    Used,
+}
+impl MeterDisplay {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Remaining => "left",
+            Self::Used => "used",
+        }
+    }
+    pub fn percent(self, used: f64) -> Option<f64> {
+        if !used.is_finite() {
+            return None;
+        }
+        let used = used.clamp(0.0, 100.0);
+        Some(match self {
+            Self::Remaining => 100.0 - used,
+            Self::Used => used,
+        })
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct AppSettings {
@@ -231,6 +268,9 @@ pub struct AppSettings {
     pub strip_x: Option<i32>,
     pub strip_y: Option<i32>,
     pub setup_complete: bool,
+    pub theme: ColorTheme,
+    pub meter_display: MeterDisplay,
+    pub anchor_to_taskbar: bool,
 }
 impl Default for AppSettings {
     fn default() -> Self {
@@ -250,6 +290,9 @@ impl Default for AppSettings {
             strip_x: None,
             strip_y: None,
             setup_complete: false,
+            theme: ColorTheme::Black,
+            meter_display: MeterDisplay::Remaining,
+            anchor_to_taskbar: true,
         }
     }
 }
@@ -317,4 +360,32 @@ pub struct QuotaAllocation {
     pub unallocated_percent: Option<f64>,
     pub interval_count: u64,
     pub gap_count: u64,
+}
+
+#[cfg(test)]
+mod display_settings_tests {
+    use super::*;
+    #[test]
+    fn existing_settings_get_display_defaults_without_losing_identity_or_positions() {
+        let settings: AppSettings = serde_json::from_value(serde_json::json!({"deviceId":"existing","stripX":-1500,"stripY":200,"setupComplete":true,"launchAtLogin":false})).unwrap();
+        assert_eq!(settings.theme, ColorTheme::Black);
+        assert_eq!(settings.meter_display, MeterDisplay::Remaining);
+        assert!(settings.anchor_to_taskbar);
+        assert_eq!(settings.device_id, "existing");
+        assert_eq!(settings.strip_x, Some(-1500));
+        assert_eq!(settings.strip_y, Some(200));
+        assert!(settings.setup_complete);
+        assert!(!settings.launch_at_login);
+        let roundtrip: AppSettings =
+            serde_json::from_value(serde_json::to_value(&settings).unwrap()).unwrap();
+        assert_eq!(roundtrip.theme, settings.theme);
+    }
+    #[test]
+    fn percentage_mode_keeps_invalid_measurements_unknown() {
+        assert_eq!(MeterDisplay::Remaining.percent(0.0), Some(100.0));
+        assert_eq!(MeterDisplay::Remaining.percent(100.0), Some(0.0));
+        assert_eq!(MeterDisplay::Remaining.percent(62.0), Some(38.0));
+        assert_eq!(MeterDisplay::Used.percent(62.0), Some(62.0));
+        assert_eq!(MeterDisplay::Remaining.percent(f64::NAN), None);
+    }
 }

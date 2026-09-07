@@ -1,4 +1,6 @@
 //! A native GDI window: no resident webview, browser process, or animation loop.
+use super::geometry::{strip_origin, Rect};
+use crate::models::ColorTheme;
 use std::{
     mem::size_of,
     ptr::{null, null_mut},
@@ -19,6 +21,7 @@ static HANDLE: AtomicIsize = AtomicIsize::new(0);
 static APP: OnceLock<AppHandle> = OnceLock::new();
 static CELLS: OnceLock<Mutex<Vec<(String, String, bool)>>> = OnceLock::new();
 const REPAINT: u32 = WM_APP + 1;
+const SETTINGS_CHANGED: u32 = WM_APP + 2;
 fn wide(text: &str) -> Vec<u16> {
     text.encode_utf16().chain(Some(0)).collect()
 }
@@ -30,7 +33,13 @@ pub fn create(app: AppHandle) {
     if APP.set(app.clone()).is_err() {
         return;
     }
-    CELLS.get_or_init(|| Mutex::new(super::cells(&[], chrono::Utc::now().timestamp())));
+    CELLS.get_or_init(|| {
+        Mutex::new(super::cells(
+            &[],
+            chrono::Utc::now().timestamp(),
+            crate::app::display_settings(&app).1,
+        ))
+    });
     std::thread::Builder::new()
         .name("usage-strip".into())
         .spawn(move || unsafe {
@@ -86,6 +95,19 @@ pub fn update(cells: Vec<(String, String, bool)>) {
         }
     }
 }
+pub fn settings_changed() {
+    let hwnd = HANDLE.load(Ordering::Acquire) as HWND;
+    if !hwnd.is_null() {
+        unsafe {
+            PostMessageW(hwnd, SETTINGS_CHANGED, 0, 0);
+        }
+    }
+}
+fn anchored() -> bool {
+    APP.get()
+        .map(|app| crate::app::display_settings(app).2)
+        .unwrap_or(true)
+}
 pub fn shutdown() {
     let hwnd = HANDLE.load(Ordering::Acquire) as HWND;
     if !hwnd.is_null() {
@@ -109,24 +131,44 @@ unsafe fn position_window(hwnd: HWND, saved: Option<(i32, i32)>) {
         return;
     }
     let scale = GetDpiForWindow(hwnd).max(96) as f64 / 96.0;
-    let width = (500.0 * scale) as i32;
-    let height = (56.0 * scale) as i32;
+    let width = ((500.0 * scale) as i32)
+        .min(info.rcWork.right - info.rcWork.left)
+        .max(1);
+    let height = ((56.0 * scale) as i32)
+        .min(info.rcWork.bottom - info.rcWork.top)
+        .max(1);
     let margin = (8.0 * scale) as i32;
-    let (x, y) = saved.unwrap_or((
-        info.rcWork.right - width - margin,
-        info.rcWork.bottom - height - margin,
-    ));
-    let max_x = (info.rcWork.right - width).max(info.rcWork.left);
-    let max_y = (info.rcWork.bottom - height).max(info.rcWork.top);
-    SetWindowPos(
-        hwnd,
-        HWND_TOPMOST,
-        x.clamp(info.rcWork.left, max_x),
-        y.clamp(info.rcWork.top, max_y),
-        width,
-        height,
-        SWP_NOACTIVATE,
+    let convert = |r: RECT| Rect {
+        left: r.left,
+        top: r.top,
+        right: r.right,
+        bottom: r.bottom,
+    };
+    let (x, y) = strip_origin(
+        convert(info.rcMonitor),
+        convert(info.rcWork),
+        (width, height),
+        saved,
+        anchored(),
+        margin,
     );
+    SetWindowTextW(
+        hwnd,
+        wide(if anchored() {
+            "GCD Usage · anchored to taskbar · click to open"
+        } else {
+            "GCD Usage · drag the left grip, click to open"
+        })
+        .as_ptr(),
+    );
+    if rect.left == x
+        && rect.top == y
+        && rect.right - rect.left == width
+        && rect.bottom - rect.top == height
+    {
+        return;
+    }
+    SetWindowPos(hwnd, HWND_TOPMOST, x, y, width, height, SWP_NOACTIVATE);
 }
 unsafe fn light_theme() -> bool {
     let mut value = 1u32;
@@ -147,26 +189,47 @@ unsafe fn paint(hwnd: HWND) {
     let dc = BeginPaint(hwnd, &mut paint);
     let mut bounds: RECT = std::mem::zeroed();
     GetClientRect(hwnd, &mut bounds);
-    let light = light_theme();
-    let background = if light {
-        rgb(247, 248, 245)
-    } else {
-        rgb(27, 32, 32)
-    };
-    let foreground = if light {
-        rgb(30, 45, 42)
-    } else {
-        rgb(232, 241, 233)
-    };
-    let muted = if light {
-        rgb(105, 119, 111)
-    } else {
-        rgb(151, 168, 155)
+    let mut theme = APP
+        .get()
+        .map(|app| crate::app::display_settings(app).0)
+        .unwrap_or_default();
+    if theme == ColorTheme::System {
+        theme = if light_theme() {
+            ColorTheme::Light
+        } else {
+            ColorTheme::Slate
+        };
+    }
+    let (background, foreground, muted, accent_color) = match theme {
+        ColorTheme::Light => (
+            rgb(248, 249, 247),
+            rgb(39, 51, 47),
+            rgb(102, 114, 106),
+            rgb(82, 120, 90),
+        ),
+        ColorTheme::Slate => (
+            rgb(21, 25, 31),
+            rgb(231, 237, 245),
+            rgb(161, 175, 190),
+            rgb(165, 201, 226),
+        ),
+        ColorTheme::Midnight => (
+            rgb(9, 15, 32),
+            rgb(233, 237, 255),
+            rgb(165, 177, 207),
+            rgb(178, 190, 250),
+        ),
+        _ => (
+            rgb(0, 0, 0),
+            rgb(240, 242, 245),
+            rgb(161, 168, 179),
+            rgb(164, 200, 176),
+        ),
     };
     let brush = CreateSolidBrush(background);
     FillRect(dc, &bounds, brush);
     DeleteObject(brush);
-    let accent = CreateSolidBrush(rgb(89, 158, 124));
+    let accent = CreateSolidBrush(accent_color);
     let edge = RECT {
         left: 0,
         top: 0,
@@ -217,7 +280,7 @@ unsafe fn paint(hwnd: HWND) {
         right: 25 * dpi / 96,
         bottom: bounds.bottom,
     };
-    let grip_text = wide("⠿");
+    let grip_text = wide(if anchored() { "•" } else { "⠿" });
     DrawTextW(
         dc,
         grip_text.as_ptr(),
@@ -283,7 +346,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             let mut rect: RECT = std::mem::zeroed();
             GetWindowRect(hwnd, &mut rect);
             let x = (lparam as u32 & 0xffff) as i16 as i32;
-            if x - rect.left < 28 * GetDpiForWindow(hwnd).max(96) as i32 / 96 {
+            if !anchored() && x - rect.left < 28 * GetDpiForWindow(hwnd).max(96) as i32 / 96 {
                 HTCAPTION as isize
             } else {
                 HTCLIENT as isize
@@ -301,8 +364,12 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
         WM_EXITSIZEMOVE => {
             let mut rect: RECT = std::mem::zeroed();
             GetWindowRect(hwnd, &mut rect);
-            if let Some(app) = APP.get() {
-                crate::save_strip_position(app, rect.left, rect.top);
+            position_window(hwnd, Some((rect.left, rect.top)));
+            GetWindowRect(hwnd, &mut rect);
+            if !anchored() {
+                if let Some(app) = APP.get() {
+                    crate::save_strip_position(app, rect.left, rect.top);
+                }
             }
             0
         }
@@ -327,7 +394,17 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             }
             1
         }
+        SETTINGS_CHANGED => {
+            position_window(hwnd, APP.get().and_then(crate::strip_position));
+            InvalidateRect(hwnd, null(), 0);
+            0
+        }
         REPAINT => {
+            if anchored() {
+                let mut rect: RECT = std::mem::zeroed();
+                GetWindowRect(hwnd, &mut rect);
+                position_window(hwnd, Some((rect.left, rect.top)));
+            }
             InvalidateRect(hwnd, null(), 0);
             0
         }

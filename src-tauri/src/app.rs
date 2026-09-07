@@ -43,6 +43,15 @@ fn persist(path: &Path, settings: &AppSettings) -> Result<(), String> {
     fs::write(&temporary, text).map_err(|_| "Cannot write local settings".to_string())?;
     fs::rename(&temporary, path).map_err(|_| "Cannot save local settings".to_string())
 }
+pub(crate) fn display_settings(app: &tauri::AppHandle) -> (ColorTheme, MeterDisplay, bool) {
+    let state = app.state::<AppState>();
+    let settings = lock(&state.settings);
+    (
+        settings.theme,
+        settings.meter_display,
+        settings.anchor_to_taskbar,
+    )
+}
 pub fn strip_position(app: &tauri::AppHandle) -> Option<(i32, i32)> {
     let state = app.state::<AppState>();
     let s = lock(&state.settings);
@@ -148,13 +157,25 @@ fn save_settings(app: tauri::AppHandle, mut settings: AppSettings) -> Result<App
         }
     }
     let state = app.state::<AppState>();
-    {
+    let (connections_changed, history_changed, startup_changed) = {
         let old = lock(&state.settings);
         settings.device_id = old.device_id.clone();
         settings.strip_x = old.strip_x;
         settings.strip_y = old.strip_y;
-    }
-    if std::env::var_os("GCD_USAGE_TEST_MODE").is_none() {
+        let connections = settings.codex_path != old.codex_path
+            || settings.claude_path != old.claude_path
+            || settings.codex_home != old.codex_home
+            || settings.claude_home != old.claude_home;
+        (
+            connections,
+            connections
+                || settings.device_name != old.device_name
+                || settings.sync_folder != old.sync_folder,
+            settings.launch_at_login != old.launch_at_login
+                || (!old.setup_complete && settings.setup_complete),
+        )
+    };
+    if startup_changed && std::env::var_os("GCD_USAGE_TEST_MODE").is_none() {
         let launcher = app.autolaunch();
         if settings.launch_at_login {
             launcher.enable()
@@ -170,9 +191,15 @@ fn save_settings(app: tauri::AppHandle, mut settings: AppSettings) -> Result<App
         persist(&state.settings_path, &settings)?;
         *stored = settings.clone();
     }
-    install_watcher(&app);
-    state.dirty.store(true, Ordering::Release);
-    request_refresh(&app);
+    if history_changed {
+        install_watcher(&app);
+        state.dirty.store(true, Ordering::Release);
+    }
+    if connections_changed {
+        request_refresh(&app);
+    }
+    platform::settings_changed();
+    platform::update(&app, &state.snapshots.read().unwrap());
     let _ = app.emit("settings-updated", ());
     Ok(settings)
 }

@@ -1,5 +1,16 @@
 # Validation record
 
+## v0.1.1 display update
+
+- 50 Rust tests and eight frontend tests pass, with zero Svelte/TypeScript errors or warnings. New checks cover migration of existing settings, remaining-versus-used arithmetic, missing measurements, taskbar edges, scaled geometry, and secondary displays with negative coordinates.
+- The Windows 0.1.1 installer upgraded the existing per-user installation. An isolated native-app smoke test selected all five themes, exercised both percentage modes and both anchor settings, and verified saved preferences after reloading. Black is RGB (0, 0, 0); all four explicit palettes are distinct. System followed the Windows light preference on this computer.
+- The dashboard and native meters default to percentage left. Unknown reset time uses N/A. Theme changes do not trigger provider polling or rewrite launch-at-login unless those settings change.
+- An explicit dashboard-close event was confirmed; all child processes exited. The background app used approximately 43.2 MiB after the display checks. The local Windows installer is 2.58 MB.
+- Taskbar anchoring uses the monitor work area and locks dragging. Geometry tests cover bottom/top/left/right taskbars and DPI-sized strips; physical monitor rearrangement and auto-hide remain device checks. macOS colors in the system menu bar continue to follow macOS.
+- Repeat the native display checks with `scripts/display-smoke.cjs` using the isolated test environment described below.
+
+## v0.1.0 baseline
+
 Personal v0.1.0 preview, September 7, 2026. Executed checks are listed separately from checks requiring the user's signed-in account or physical devices.
 
 ## Executed on Windows 11 x64

@@ -6,6 +6,7 @@ import {
   isStale,
   percent,
   quotaWindow,
+  quotaPercent,
   totalTokens,
   uniqueModelStats,
 } from "./format";
@@ -17,6 +18,14 @@ describe("measured usage display", () => {
     expect(percent(0)).toBe("0%");
     expect(totalTokens(emptyTokens())).toBeNull();
     expect(totalTokens({ ...emptyTokens(), input: 0 })).toBe(0);
+  });
+  it("defaults to remaining allowance without turning missing readings into full allowance", () => {
+    expect(quotaPercent(0)).toBe(100);
+    expect(quotaPercent(100)).toBe(0);
+    expect(quotaPercent(62)).toBe(38);
+    expect(quotaPercent(62, "used")).toBe(62);
+    expect(quotaPercent(null)).toBeNull();
+    expect(quotaPercent(Number.NaN)).toBeNull();
   });
   it("does not add reasoning tokens twice", () => {
     expect(
@@ -53,7 +62,7 @@ describe("measured usage display", () => {
     expect(isStale({ ...snapshot, fetchedAt: 100 }, window, 999)).toBe(true);
   });
   it("uses explicit labels for absent and elapsed resets", () => {
-    expect(countdown(null, 100)).toBe("Reset unavailable");
+    expect(countdown(null, 100)).toBe("Reset N/A");
     expect(countdown(99, 100)).toBe("Awaiting reset");
     expect(countdown(161, 100)).toBe("Resets in 2m");
   });

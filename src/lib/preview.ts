@@ -23,6 +23,9 @@ const settings: AppSettings = {
   stripX: null,
   stripY: null,
   setupComplete: true,
+  theme: "black",
+  meterDisplay: "remaining",
+  anchorToTaskbar: true,
 };
 const prompts = [
   "Add keyboard navigation to the command palette and preserve the selected item.",

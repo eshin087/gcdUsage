@@ -1,13 +1,15 @@
-use crate::models::{ConnectionStatus, Provider, QuotaSnapshot};
+use crate::models::{ColorTheme, ConnectionStatus, MeterDisplay, Provider, QuotaSnapshot};
 use chrono::Utc;
 use tauri::{AppHandle, Manager};
 
+#[cfg(any(windows, test))]
+mod geometry;
 #[cfg(windows)]
 mod windows_strip;
 
 pub fn countdown(reset: Option<i64>, now: i64) -> String {
     let Some(reset) = reset else {
-        return "reset unknown".into();
+        return "N/A".into();
     };
     let seconds = reset - now;
     if seconds <= 0 {
@@ -22,7 +24,11 @@ pub fn countdown(reset: Option<i64>, now: i64) -> String {
     }
 }
 
-pub fn cells(snapshots: &[QuotaSnapshot], now: i64) -> Vec<(String, String, bool)> {
+pub fn cells(
+    snapshots: &[QuotaSnapshot],
+    now: i64,
+    display: MeterDisplay,
+) -> Vec<(String, String, bool)> {
     [
         (Provider::Claude, 300, "Claude · 5h"),
         (Provider::Claude, 10080, "Claude · week"),
@@ -52,9 +58,13 @@ pub fn cells(snapshots: &[QuotaSnapshot], now: i64) -> Vec<(String, String, bool
                 (
                     label.to_string(),
                     format!(
-                        "{}{:.0}%  ·  {}",
+                        "{}{} {} · {}",
                         if stale { "~" } else { "" },
-                        w.used_percent,
+                        display
+                            .percent(w.used_percent)
+                            .map(|p| format!("{p:.0}%"))
+                            .unwrap_or_else(|| "—".into()),
+                        display.label(),
                         countdown(w.resets_at, now)
                     ),
                     stale,
@@ -83,7 +93,11 @@ pub fn create(app: &AppHandle) {
     let _ = app;
 }
 pub fn update(app: &AppHandle, snapshots: &[QuotaSnapshot]) {
-    let cells = cells(snapshots, Utc::now().timestamp());
+    let (theme, display, _) = crate::app::display_settings(app);
+    let cells = cells(snapshots, Utc::now().timestamp(), display);
+    if let Some(window) = app.get_webview_window("dashboard") {
+        let _ = window.set_theme(window_theme(theme));
+    }
     if let Some(tray) = app.tray_by_id("usage") {
         let full = cells
             .iter()
@@ -96,14 +110,33 @@ pub fn update(app: &AppHandle, snapshots: &[QuotaSnapshot]) {
             let title = cells
                 .iter()
                 .zip(["C5", "CW", "OW"])
-                .map(|((_, value, _), label)| format!("{label} {}", value.replace("  ·  ", " ")))
+                .map(|((_, value, _), label)| {
+                    format!(
+                        "{label} {}",
+                        value
+                            .replace(" · ", " ")
+                            .replace(" left", "")
+                            .replace(" used", "")
+                    )
+                })
                 .collect::<Vec<_>>()
                 .join("  ");
-            let _ = tray.set_title(Some(title));
+            let _ = tray.set_title(Some(format!("{} · {title}", display.label())));
         }
     }
     #[cfg(windows)]
     windows_strip::update(cells);
+}
+fn window_theme(theme: ColorTheme) -> Option<tauri::Theme> {
+    match theme {
+        ColorTheme::System => None,
+        ColorTheme::Light => Some(tauri::Theme::Light),
+        _ => Some(tauri::Theme::Dark),
+    }
+}
+pub fn settings_changed() {
+    #[cfg(windows)]
+    windows_strip::settings_changed();
 }
 pub fn shutdown() {
     #[cfg(windows)]
@@ -122,6 +155,7 @@ pub fn show_dashboard(app: &AppHandle) -> Result<(), String> {
         tauri::WebviewUrl::App("index.html".into()),
     )
     .title("GCD Usage")
+    .theme(window_theme(crate::app::display_settings(app).0))
     .inner_size(1100.0, 760.0)
     .min_inner_size(760.0, 540.0)
     .center()
@@ -154,7 +188,7 @@ mod tests {
     use super::*;
     #[test]
     fn unknown_never_becomes_zero() {
-        assert!(cells(&[], 0)
+        assert!(cells(&[], 0, MeterDisplay::Remaining)
             .iter()
             .all(|(_, v, _)| v.contains('—') && !v.contains("0%")));
     }
@@ -162,6 +196,6 @@ mod tests {
     fn countdown_boundaries() {
         assert_eq!(countdown(Some(120), 0), "2m");
         assert_eq!(countdown(Some(0), 1), "refreshing");
-        assert_eq!(countdown(None, 0), "reset unknown");
+        assert_eq!(countdown(None, 0), "N/A");
     }
 }

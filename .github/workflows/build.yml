@@ -41,6 +41,7 @@ jobs:
             ~/.cargo/git
             src-tauri/target
           key: rust-${{ matrix.target }}-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: rust-${{ matrix.target }}-
       - run: npm ci
       - run: npm run check
       - run: npm test

@@ -134,6 +134,8 @@ export interface ImportReport {
   requests: number;
   warnings: string[];
 }
+export type ColorTheme = "black" | "slate" | "midnight" | "light" | "system";
+export type MeterDisplay = "remaining" | "used";
 export interface AppSettings {
   deviceId: string;
   deviceName: string;
@@ -148,6 +150,9 @@ export interface AppSettings {
   stripX: number | null;
   stripY: number | null;
   setupComplete: boolean;
+  theme: ColorTheme;
+  meterDisplay: MeterDisplay;
+  anchorToTaskbar: boolean;
 }
 export interface Recommendation {
   provider: Provider;

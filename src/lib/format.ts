@@ -1,5 +1,6 @@
 import type {
   HistoryFilter,
+  MeterDisplay,
   ModelStat,
   Provider,
   QuotaSnapshot,
@@ -18,6 +19,14 @@ export const exactCount = (value: number | null | undefined): string =>
   value == null || !Number.isFinite(value) ? "—" : full.format(value);
 export const percent = (value: number | null | undefined): string =>
   value == null || !Number.isFinite(value) ? "—" : `${Math.round(value)}%`;
+export function quotaPercent(
+  used: number | null | undefined,
+  display: MeterDisplay = "remaining",
+): number | null {
+  if (used == null || !Number.isFinite(used)) return null;
+  const clamped = Math.min(100, Math.max(0, used));
+  return display === "remaining" ? 100 - clamped : clamped;
+}
 export const providerName = (provider: Provider): string =>
   provider === "claude" ? "Claude" : "Codex";
 export function totalTokens(tokens: TokenUsage): number | null {
@@ -35,8 +44,7 @@ export function countdown(
   resetsAt: number | null | undefined,
   now: number,
 ): string {
-  if (resetsAt == null || !Number.isFinite(resetsAt))
-    return "Reset unavailable";
+  if (resetsAt == null || !Number.isFinite(resetsAt)) return "Reset N/A";
   const seconds = Math.max(0, Math.ceil(resetsAt - now));
   if (!seconds) return "Awaiting reset";
   const minutes = Math.ceil(seconds / 60);

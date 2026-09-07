@@ -4,17 +4,21 @@ A small desktop companion for Claude Code and Codex: glanceable quota meters, lo
 
 ## What it shows
 
-- **Windows 11:** a native strip above the taskbar. Drag its left grip to move it; click a meter to open the dashboard. It does not keep a browser running for the strip.
+- **Windows 11:** a native strip anchored against the taskbar edge by default. Click a meter to open the dashboard. In Settings → Appearance, turn off **Anchor to taskbar** to drag the left grip freely; turn it back on to lock the strip to that monitor’s taskbar edge. It does not keep a browser running for the strip.
 - **macOS 13+:** compact menu-bar labels for Claude's five-hour and weekly limits and Codex's weekly limit. Keep the macOS menu bar visible if you want to glance without hovering.
 - **Dashboard:** Overview, filtered prompt History, Recommendations, and Settings. Closing it destroys the webview while collection continues. Quit completely from the tray menu.
 
-Percentages are **used**, not remaining. A `~` marks a last-known/stale reading; `—` means no reading is available. Reset countdowns update locally. The app refreshes usage every two minutes, on wake, and when requested, with backoff on failures.
+Percentages show **left** by default. Settings → Appearance lets you choose percentage used instead. The preference applies to the native meters and dashboard progress bars. A `~` marks a last-known/stale reading; `—` means no reading is available. An unavailable reset time is shown as `N/A`. Reset countdowns update locally. The app refreshes usage every two minutes, on wake, and when requested, with backoff on failures.
 
 Ordinary ChatGPT and Claude browser conversations are outside v1. ChatGPT Work and Codex share a quota; an ordinary ChatGPT chat counter is not represented as Codex usage.
 
+The default theme is **Black**. Choose Black, Slate, Midnight, Light, or System in Settings → Appearance. Themes apply to the dashboard and native Windows strip; macOS menu-bar colors follow macOS. Appearance preferences stay on each computer.
+
+Windows 11 does not expose a supported extension for embedding custom text inside its taskbar. Anchoring keeps this app’s separate strip against the taskbar edge; it does not modify Explorer or reserve an entire row of screen space.
+
 ## Downloads
 
-Get the personal preview from the [private GitHub release](https://github.com/eshin087/gcdUsage/releases/tag/v0.1.0), signed in as an account with repository access. Choose Windows x64 or ARM64, or macOS Intel or Apple Silicon. Windows packages install per user; Mac DMGs contain an application bundle to drag into Applications. Updates are manual.
+Get the personal preview from the [private GitHub release](https://github.com/eshin087/gcdUsage/releases/tag/v0.1.1), signed in as an account with repository access. Choose Windows x64 or ARM64, or macOS Intel or Apple Silicon. Windows packages install per user; Mac DMGs contain an application bundle to drag into Applications. Updates are manual.
 
 ## First setup
 
