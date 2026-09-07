@@ -19,9 +19,11 @@ Personal v0.1.0 preview, September 7, 2026. Executed checks are listed separatel
 
 ## Cross-platform checks
 
-GitHub Actions builds and tests Windows x64, Windows ARM64, macOS Intel, and macOS Apple Silicon on their corresponding runners. All four package builds passed. The macOS jobs additionally start the packaged app in background mode with isolated local data, confirm it remains alive and creates its SQLite database, then terminate their own test process. The tagged release workflow repeats these checks for the final source revision.
+GitHub Actions builds and tests Windows x64, Windows ARM64, macOS Intel, and macOS Apple Silicon on their corresponding runners. All four package builds passed. The macOS jobs additionally start the packaged app in background mode with isolated local data, confirm it remains alive and creates its SQLite database, then terminate their own test process. The [final tagged release workflow](https://github.com/eshin087/gcdUsage/actions/runs/34165888175) passed all 45 Rust tests and seven frontend tests on each architecture. macOS background RSS was about 31.7 MiB on Intel and 70.0 MiB on Apple Silicon in CI, with no provider accounts or user history configured.
 
 Compilation and background launch do not establish interactive menu-bar behavior, macOS Keychain access, or first-launch approval on a personal Mac.
+
+The [private release](https://github.com/eshin087/gcdUsage/releases/tag/v0.1.0) contains four installers and SHA-256 checksums. Uploaded asset sizes and digests were verified: Windows x64 2.57 MB, Windows ARM64 2.30 MB, macOS Intel 3.40 MB, and macOS Apple Silicon 3.11 MB.
 
 ## Repeatable checks
 
