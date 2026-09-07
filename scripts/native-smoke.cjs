@@ -83,7 +83,7 @@ async function main() {
 
   const report = {
     snapshots: restored.snapshots.map(snapshot => ({ provider: snapshot.provider, status: snapshot.status, message: snapshot.message, windowCount: snapshot.windows.length })),
-    history: { prompts: history.total, pageSize: history.items.length, conversations: restored.stats.conversationCount, requests: restored.stats.requestCount },
+    history: { prompts: history.total, pageSize: history.items.length, conversations: restored.stats.conversationCount, requests: restored.stats.requestCount, totalTokens: restored.stats.totalTokens },
     importing: restored.importing,
     importFiles: restored.importReport.files,
     importWarnings: restored.importReport.warnings.length,

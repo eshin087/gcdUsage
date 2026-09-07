@@ -28,8 +28,7 @@ struct ParserState {
     kind: Option<ActivityKind>,
     last_user_hash: Option<String>,
     cumulative: Option<TokenUsage>,
-    modern: bool,
-    last_explicit_event: Option<String>,
+    explicit_since_legacy: bool,
     account: String,
     available_account: String,
     claude_parents: HashMap<String, String>,
@@ -388,6 +387,10 @@ fn parse_codex(
         }
         "turn_context" => {
             if let Some(turn) = text(&p["turn_id"]) {
+                if state.turn != turn {
+                    state.current_prompt = None;
+                    state.last_user_hash = None;
+                }
                 state.turn = turn;
             }
             state.root_turn = text(&p["root_turn_id"]).filter(|t| *t != state.turn);
@@ -419,14 +422,35 @@ fn parse_codex(
             "token_count" => {
                 let total = &p["info"]["total_token_usage"];
                 if total.is_object() {
-                    let mut cumulative = codex_raw_tokens(total);
-                    cumulative.input = number(total, &["input_tokens"]);
+                    let cumulative = codex_raw_tokens(total);
+                    // These totals can lag the modern stream after compaction. Keep
+                    // a separate legacy baseline and never compare the two streams.
+                    let last = p["info"]["last_token_usage"]
+                        .is_object()
+                        .then(|| codex_raw_tokens(&p["info"]["last_token_usage"]));
                     let mut delta = state
                         .cumulative
                         .as_ref()
-                        .map(|old| delta_tokens(&cumulative, old))
-                        .unwrap_or_else(|| cumulative.clone());
+                        .map(|old| {
+                            let regressed = [
+                                (cumulative.input, old.input),
+                                (cumulative.cache_read, old.cache_read),
+                                (cumulative.cache_write, old.cache_write),
+                                (cumulative.output, old.output),
+                            ]
+                            .iter()
+                            .any(|(new, old)| matches!((new, old), (Some(n), Some(o)) if n < o));
+                            if regressed {
+                                last.clone().unwrap_or_default()
+                            } else {
+                                delta_tokens(&cumulative, old)
+                            }
+                        })
+                        .unwrap_or_else(|| last.unwrap_or_else(|| cumulative.clone()));
                     state.cumulative = Some(cumulative);
+                    if std::mem::take(&mut state.explicit_since_legacy) {
+                        return Ok(());
+                    }
                     separate_codex_cache(&mut delta);
                     if delta.total() > 0 || delta.reasoning.is_some_and(|n| n > 0) {
                         let event = stable_id(&[&time.to_string(), &total.to_string()]);
@@ -462,7 +486,6 @@ fn parse_codex(
             }
         }
         "token_usage_record" => {
-            state.modern = true;
             if let Some(turn) = text(&p["turn_id"]) {
                 state.turn = turn;
             }
@@ -479,19 +502,7 @@ fn parse_codex(
                     stable_id(&[&state.turn, &time.to_string(), &p["usage"].to_string()])
                 });
             if p["usage"].is_object() {
-                // Keep a cumulative baseline so mirrored token_count records yield zero,
-                // while preserving legacy requests before or after a format transition.
-                if p["thread_token_usage"].is_object() {
-                    state.cumulative = Some(codex_raw_tokens(&p["thread_token_usage"]));
-                } else if state.last_explicit_event.as_ref() != Some(&event) {
-                    let usage = codex_raw_tokens(&p["usage"]);
-                    if let Some(total) = &mut state.cumulative {
-                        total.add(&usage);
-                    } else {
-                        state.cumulative = Some(usage);
-                    }
-                }
-                state.last_explicit_event = Some(event.clone());
+                state.explicit_since_legacy = true;
                 save_usage(
                     store,
                     state,
@@ -892,5 +903,44 @@ mod tests {
         assert_eq!(stats.total_tokens, 135);
         drop(file);
         std::fs::remove_file(path).unwrap();
+    }
+    #[test]
+    fn modern_records_do_not_share_rebased_legacy_counters() {
+        let (_, mut store, mut state, mut report) = fixture();
+        let records = [
+            serde_json::json!({"type":"token_usage_record","timestamp":100,"payload":{"response_id":"a","usage":{"input_tokens":100,"cached_input_tokens":80,"output_tokens":10},"thread_token_usage":{"input_tokens":100,"cached_input_tokens":80,"output_tokens":10}}}),
+            serde_json::json!({"type":"event_msg","timestamp":100,"payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":100,"cached_input_tokens":80,"output_tokens":10}}}}),
+            serde_json::json!({"type":"token_usage_record","timestamp":101,"payload":{"response_id":"b","usage":{"input_tokens":20,"cached_input_tokens":10,"output_tokens":4},"thread_token_usage":{"input_tokens":120,"cached_input_tokens":90,"output_tokens":14}}}),
+            serde_json::json!({"type":"event_msg","timestamp":101,"payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":100,"cached_input_tokens":80,"output_tokens":10},"last_token_usage":{"input_tokens":0,"cached_input_tokens":0,"output_tokens":0}}}}),
+            serde_json::json!({"type":"token_usage_record","timestamp":102,"payload":{"response_id":"c","usage":{"input_tokens":30,"cached_input_tokens":20,"output_tokens":5},"thread_token_usage":{"input_tokens":150,"cached_input_tokens":110,"output_tokens":19}}}),
+            serde_json::json!({"type":"event_msg","timestamp":102,"payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":130,"cached_input_tokens":100,"output_tokens":15}}}}),
+            serde_json::json!({"type":"event_msg","timestamp":103,"payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":140,"cached_input_tokens":105,"output_tokens":18}}}}),
+        ];
+        for (i, record) in records.iter().enumerate() {
+            // Exercise checkpoint serialization between every appended record.
+            state = serde_json::from_str(&serde_json::to_string(&state).unwrap()).unwrap();
+            parse_codex(&mut store, record, &mut state, "d", i as u64, &mut report).unwrap();
+        }
+        let stats = store.stats(None, None).unwrap();
+        assert_eq!(stats.request_count, 4);
+        assert_eq!(stats.total_tokens, 182);
+        assert_eq!(stats.token_totals.cache_read, Some(115));
+    }
+
+    #[test]
+    fn initial_legacy_snapshot_uses_last_request_not_inherited_total() {
+        let (_, mut store, mut state, mut report) = fixture();
+        let record = serde_json::json!({"type":"event_msg","timestamp":100,"payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":1000000,"cached_input_tokens":900000,"output_tokens":10000},"last_token_usage":{"input_tokens":100,"cached_input_tokens":80,"output_tokens":5}}}});
+        parse_codex(&mut store, &record, &mut state, "d", 0, &mut report).unwrap();
+        assert_eq!(store.stats(None, None).unwrap().total_tokens, 105);
+    }
+    #[test]
+    fn identical_prompts_in_distinct_legacy_turns_are_counted_separately() {
+        let (_, mut store, mut state, mut report) = fixture();
+        for (time, turn) in [(100, "one"), (200, "two")] {
+            parse_codex(&mut store, &serde_json::json!({"type":"turn_context","timestamp":time,"payload":{"turn_id":turn,"model":"gpt"}}), &mut state, "d", time, &mut report).unwrap();
+            parse_codex(&mut store, &serde_json::json!({"type":"event_msg","timestamp":time,"payload":{"type":"user_message","message":"continue"}}), &mut state, "d", time, &mut report).unwrap();
+        }
+        assert_eq!(store.stats(None, None).unwrap().prompt_count, 2);
     }
 }

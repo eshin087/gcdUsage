@@ -12,6 +12,10 @@ Percentages are **used**, not remaining. A `~` marks a last-known/stale reading;
 
 Ordinary ChatGPT and Claude browser conversations are outside v1. ChatGPT Work and Codex share a quota; an ordinary ChatGPT chat counter is not represented as Codex usage.
 
+## Downloads
+
+Get the personal preview from the [private GitHub release](https://github.com/eshin087/gcdUsage/releases/tag/v0.1.0), signed in as an account with repository access. Choose Windows x64 or ARM64, or macOS Intel or Apple Silicon. Windows packages install per user; Mac DMGs contain an application bundle to drag into Applications. Updates are manual.
+
 ## First setup
 
 1. Install the package for your OS/processor. Initial packages are personal builds without trusted publisher signing. Windows may request a first-launch confirmation. On macOS, approve the app through **System Settings → Privacy & Security** if Gatekeeper blocks the personal build.
@@ -70,7 +74,7 @@ npm run app:build -- --bundles nsis
 npm run app:build -- --bundles app,dmg
 ```
 
-Artifacts appear under `src-tauri/target/release/bundle`. The manually dispatched GitHub workflow builds Windows x64/ARM64 and macOS Intel/Apple Silicon packages when this source is placed in a repository. It uploads build artifacts; it does not publish a public release. Mac packages must be built and smoke-tested on macOS.
+Artifacts appear under `src-tauri/target/release/bundle`. The GitHub workflow runs on manual dispatch and version tags, building Windows x64/ARM64 and macOS Intel/Apple Silicon packages on matching runners. It uploads private build artifacts and smoke-tests packaged macOS background launch. Release assets are published manually after validation.
 
 The optional diagnostic binary performs read-only provider probes and imports into an explicitly selected local test directory. It reports totals without printing prompt previews or provider credentials. See `docs/VALIDATION.md` for release verification.
 
