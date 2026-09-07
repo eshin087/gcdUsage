@@ -116,6 +116,17 @@ export interface DashboardStats {
   modelStats: ModelStat[];
   computers: string[];
   backgroundRequests: number;
+  quotaAllocations?: QuotaAllocation[];
+}
+export interface QuotaAllocation {
+  provider: Provider;
+  accountId: string;
+  windowId: string;
+  observedPercent: number | null;
+  allocatedPercent: number | null;
+  unallocatedPercent: number | null;
+  intervalCount: number;
+  gapCount: number;
 }
 export interface ImportReport {
   files: number;

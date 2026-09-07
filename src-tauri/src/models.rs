@@ -202,6 +202,8 @@ pub struct DashboardStats {
     pub model_stats: Vec<ModelStat>,
     pub computers: Vec<String>,
     pub background_requests: u64,
+    #[serde(default)]
+    pub quota_allocations: Vec<QuotaAllocation>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -302,4 +304,17 @@ pub struct Overview {
     pub importing: bool,
     pub last_sync: Option<i64>,
     pub sync_message: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QuotaAllocation {
+    pub provider: Provider,
+    pub account_id: String,
+    pub window_id: String,
+    pub observed_percent: Option<f64>,
+    pub allocated_percent: Option<f64>,
+    pub unallocated_percent: Option<f64>,
+    pub interval_count: u64,
+    pub gap_count: u64,
 }

@@ -873,4 +873,24 @@ mod tests {
         assert_eq!(requests[1].tokens.cache_read, Some(40));
         assert_eq!(store.stats(None, None).unwrap().total_tokens, 140);
     }
+    #[test]
+    fn a_file_can_mix_legacy_requests_and_modern_records() {
+        let (path, mut store, _, mut report) = fixture();
+        let mut file = File::create(&path).unwrap();
+        for value in [
+            serde_json::json!({"type":"session_meta","payload":{"id":"s"}}),
+            serde_json::json!({"type":"event_msg","timestamp":100,"payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":100,"output_tokens":10}}}}),
+            serde_json::json!({"type":"token_usage_record","timestamp":200,"payload":{"response_id":"modern","usage":{"input_tokens":20,"output_tokens":5},"thread_token_usage":{"input_tokens":120,"output_tokens":15}}}),
+            serde_json::json!({"type":"event_msg","timestamp":200,"payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":120,"output_tokens":15}}}}),
+        ] {
+            writeln!(file, "{value}").unwrap();
+        }
+        file.flush().unwrap();
+        import_file(&mut store, &path, Provider::Codex, "a", "d", &mut report).unwrap();
+        let stats = store.stats(None, None).unwrap();
+        assert_eq!(stats.request_count, 2);
+        assert_eq!(stats.total_tokens, 135);
+        drop(file);
+        std::fs::remove_file(path).unwrap();
+    }
 }

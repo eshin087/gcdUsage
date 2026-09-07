@@ -381,6 +381,7 @@ impl Store {
         if prompt.status != "completed"
             || prompt.kind != ActivityKind::User
             || prompt.account_id.starts_with("local-unverified")
+            || prompt.account_id.starts_with("unknown:")
         {
             return Ok(vec![]);
         }
@@ -598,9 +599,135 @@ impl Store {
                 .then_with(|| a.model.cmp(&b.model))
                 .then_with(|| a.quota_window_id.cmp(&b.quota_window_id))
         });
+        for (id, prompt) in &users {
+            if !quota_cache.contains_key(id) {
+                quota_cache.insert(id.clone(), self.quota_estimates(prompt)?);
+            }
+        }
+        result.quota_allocations = self.quota_allocations(from, to, &users, &quota_cache)?;
         result.daily = daily.into_values().collect();
         result.computers = devices.into_iter().collect();
         result.computers.sort();
+        Ok(result)
+    }
+    /// Changes across consecutive snapshots are disjoint, even when different computers
+    /// contribute samples. Reset boundaries and missing coverage are retained as gaps.
+    fn quota_allocations(
+        &self,
+        from: Option<i64>,
+        to: Option<i64>,
+        prompts: &HashMap<String, &PromptRecord>,
+        estimates: &HashMap<String, Vec<QuotaEstimate>>,
+    ) -> Result<Vec<QuotaAllocation>, String> {
+        type Key = (Provider, String, String);
+        struct Aggregate {
+            row: QuotaAllocation,
+            previous_time: i64,
+            previous_used: f64,
+            previous_reset: Option<i64>,
+            observed: f64,
+        }
+        let mut groups: HashMap<Key, Aggregate> = HashMap::new();
+        let mut query=self.connection.prepare("SELECT data FROM snapshots WHERE timestamp>=?1 AND timestamp<=?2 ORDER BY timestamp,id").map_err(|e|e.to_string())?;
+        let rows = query
+            .query_map(
+                params![from.unwrap_or(i64::MIN), to.unwrap_or(i64::MAX)],
+                |r| r.get::<_, String>(0),
+            )
+            .map_err(|e| e.to_string())?;
+        for row in rows {
+            let snapshot: QuotaSnapshot = serde_json::from_str(&row.map_err(|e| e.to_string())?)
+                .map_err(|e| e.to_string())?;
+            if snapshot.status != ConnectionStatus::Connected {
+                continue;
+            }
+            for window in snapshot.windows {
+                let key = (
+                    snapshot.provider,
+                    snapshot.account_id.clone(),
+                    window.id.clone(),
+                );
+                if let Some(group) = groups.get_mut(&key) {
+                    if snapshot.fetched_at == group.previous_time {
+                        group.previous_used = group.previous_used.max(window.used_percent);
+                        continue;
+                    }
+                    let same_window = window.resets_at.is_some()
+                        && window.resets_at == group.previous_reset
+                        && window
+                            .resets_at
+                            .is_some_and(|reset| reset > snapshot.fetched_at);
+                    if same_window && window.used_percent >= group.previous_used {
+                        group.observed += window.used_percent - group.previous_used;
+                        group.row.interval_count += 1;
+                        if snapshot.fetched_at - group.previous_time > 300 {
+                            group.row.gap_count += 1;
+                        }
+                    } else {
+                        group.row.gap_count += 1;
+                    }
+                    group.previous_time = snapshot.fetched_at;
+                    group.previous_used = window.used_percent;
+                    group.previous_reset = window.resets_at;
+                } else {
+                    groups.insert(
+                        key,
+                        Aggregate {
+                            row: QuotaAllocation {
+                                provider: snapshot.provider,
+                                account_id: snapshot.account_id.clone(),
+                                window_id: window.id,
+                                observed_percent: None,
+                                allocated_percent: None,
+                                unallocated_percent: None,
+                                interval_count: 0,
+                                gap_count: 0,
+                            },
+                            previous_time: snapshot.fetched_at,
+                            previous_used: window.used_percent,
+                            previous_reset: window.resets_at,
+                            observed: 0.,
+                        },
+                    );
+                }
+            }
+        }
+        let mut allocated: HashMap<Key, f64> = HashMap::new();
+        for (id, values) in estimates {
+            let Some(prompt) = prompts.get(id) else {
+                continue;
+            };
+            for value in values {
+                *allocated
+                    .entry((
+                        prompt.provider,
+                        prompt.account_id.clone(),
+                        value.window_id.clone(),
+                    ))
+                    .or_default() += value.percent;
+            }
+        }
+        let mut result = vec![];
+        for (key, mut group) in groups {
+            if group.row.interval_count > 0 {
+                group.row.observed_percent = Some(group.observed);
+                let amount = allocated.get(&key).copied().unwrap_or(0.);
+                // Conflicting reporting timestamps can make isolated estimates inconsistent.
+                // Preserve that uncertainty instead of clamping it into a false allocation.
+                if amount <= group.observed + 1e-9 {
+                    group.row.allocated_percent = Some(amount);
+                    group.row.unallocated_percent = Some((group.observed - amount).max(0.));
+                }
+            }
+            result.push(group.row);
+        }
+        result.sort_by(|a, b| {
+            a.provider
+                .key()
+                .cmp(b.provider.key())
+                .then_with(|| a.account_id.cmp(&b.account_id))
+                .then_with(|| a.window_id.cmp(&b.window_id))
+        });
         Ok(result)
     }
     pub fn pending_events(&self, limit: usize) -> Result<Vec<(String, SyncEvent)>, String> {
@@ -894,5 +1021,56 @@ mod tests {
         let saved = s.prompt("p1").unwrap().unwrap();
         assert_eq!(saved.status, "completed");
         assert_eq!(saved.completed_at, Some(125));
+    }
+    #[test]
+    fn accounting_retains_unallocated_deltas_and_unknown_reset_gaps() {
+        let mut s = Store::open(Path::new(":memory:")).unwrap();
+        s.save_snapshot(&snapshot("a", 100, 5., 1000)).unwrap();
+        s.save_snapshot(&snapshot("b", 140, 7., 1000)).unwrap();
+        let row = s.stats(None, None).unwrap().quota_allocations.remove(0);
+        assert_eq!(row.observed_percent, Some(2.));
+        assert_eq!(row.allocated_percent, Some(0.));
+        assert_eq!(row.unallocated_percent, Some(2.));
+        assert_eq!(row.interval_count, 1);
+        let mut duplicate = snapshot("other-device", 140, 7., 1000);
+        duplicate.device_id = "other".into();
+        s.save_snapshot(&duplicate).unwrap();
+        s.save_snapshot(&snapshot("c", 1100, 1., 2000)).unwrap();
+        let row = s.stats(None, None).unwrap().quota_allocations.remove(0);
+        assert_eq!(row.observed_percent, Some(2.));
+        assert_eq!(row.gap_count, 1);
+        let only_gap = s
+            .stats(Some(140), None)
+            .unwrap()
+            .quota_allocations
+            .remove(0);
+        assert_eq!(only_gap.observed_percent, None);
+        assert_eq!(only_gap.unallocated_percent, None);
+    }
+    #[test]
+    fn unknown_account_never_calibrates_and_combined_filter_matches_one_request() {
+        let mut s = Store::open(Path::new(":memory:")).unwrap();
+        let mut p = prompt();
+        p.account_id = "unknown:claude".into();
+        assert!(s.quota_estimate(&p).unwrap().is_none());
+        s.save_prompt(&prompt()).unwrap();
+        let mut first = request();
+        first.effort = Some("high".into());
+        s.save_request(&first).unwrap();
+        let mut second = request();
+        second.id = "r2".into();
+        second.model = "other".into();
+        second.effort = Some("low".into());
+        s.save_request(&second).unwrap();
+        assert_eq!(
+            s.history(&HistoryFilter {
+                model: Some("gpt".into()),
+                effort: Some("low".into()),
+                ..Default::default()
+            })
+            .unwrap()
+            .total,
+            0
+        );
     }
 }

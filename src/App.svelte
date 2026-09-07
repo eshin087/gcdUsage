@@ -206,7 +206,7 @@
       busy = "";
     }
   }
-  const refresh = () => perform("refresh", api.refresh, "Usage refreshed.");
+  const refresh = () => perform("refresh", api.refresh, "Refresh requested.");
   const reconnect = (provider: Provider) =>
     perform(
       `reconnect-${provider}`,
@@ -571,6 +571,22 @@
             </table>
           </div>
         </section>{/if}
+      {#if stats?.quotaAllocations?.length}
+        <section class="panel model-panel" aria-label="Quota accounting">
+          <div class="panel-heading"><h2>Quota accounting</h2><span class="subtle">Changes between saved readings</span></div>
+          <p class="fineprint">Percentage-point changes across recorded windows. Prompt attribution is estimated; overlapping or unseen work stays unallocated. Gaps and resets leave incomplete coverage.</p>
+          <div class="table-scroll"><table>
+            <thead><tr><th>Allowance</th><th class="numeric">Observed</th><th class="numeric">Attributed</th><th class="numeric">Unallocated</th><th class="numeric">Gaps</th></tr></thead>
+            <tbody>{#each stats.quotaAllocations as allocation}<tr>
+              <td>{providerName(allocation.provider)} <span class="subtle">{allocation.windowId.replace(allocation.provider + ":", "").replace("10080", "weekly").replace("300", "5-hour")}</span><small class="subtle"> · {allocation.accountId.slice(-6)}</small></td>
+              <td class="numeric">{allocation.observedPercent == null ? "—" : allocation.observedPercent.toFixed(1) + " pp"}</td>
+              <td class="numeric">{allocation.allocatedPercent == null ? "—" : allocation.allocatedPercent.toFixed(1) + " pp"}</td>
+              <td class="numeric">{allocation.unallocatedPercent == null ? "—" : allocation.unallocatedPercent.toFixed(1) + " pp"}</td>
+              <td class="numeric">{count(allocation.gapCount)}</td>
+            </tr>{/each}</tbody>
+          </table></div>
+        </section>
+      {/if}
       <footer class="page-footer">
         <span
           ><Icon name="shield" size={14} />Your credentials stay on this
