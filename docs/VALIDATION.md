@@ -7,7 +7,7 @@ Personal v0.1.0 preview, September 7, 2026. Executed checks are listed separatel
 - **45 Rust tests passed**, covering provider parsing, expired/missing sign-ins, quota-window selection, token overlap arithmetic, streaming offsets, incomplete records, mixed models, duplicate requests, forks, subagents/background work, account separation, sync delivery, and recommendation budgets.
 - **Seven frontend tests passed**; Svelte/TypeScript reported zero errors or warnings. Production and headless UI checks cover all four pages, compact/desktop widths, and light/dark appearance.
 - Live Codex account/rate-limit/model reads succeeded through its temporary app-server. The provider helper exits after the read.
-- Claude's saved sign-in is expired. The app detects its local expiry without repeatedly contacting the usage endpoint, displays Sign in needed, and offers the provider's own reconnect flow. Successful authenticated Claude polling still requires a renewed Claude Code sign-in.
+- Live Claude polling succeeded after renewing the Claude Code sign-in: the private usage endpoint returned both five-hour and weekly usage in 206 ms. Before reconnect, the app correctly detected local token expiry without repeatedly contacting the endpoint. The five-hour response omitted a reset timestamp; that remains unavailable rather than being invented.
 - A fresh real-log diagnostic imported 265 files and 13,563 requests in 14.3 seconds, with zero warnings. It measured about 1.912 billion tokens, mostly repeated cache reads. The next incremental scan took 229 ms (575 ms including statistics), added no requests/prompts, and preserved the same totals. Counts grow while coding tools are active.
 - Regression tests cover mirrored modern/legacy token records after compaction, inherited initial cumulative totals, and repeated identical prompts in different turns. These prevent historical counter rebasing from inflating token totals.
 - The corrected **installed application** imported 272 files, 263 user prompts, 30 conversations, and 13,650 requests with no warnings. Its native WebView smoke test exercised history filters/details, all three recommendation choices, settings persistence/reload, and dashboard close; no browser errors occurred.
@@ -40,7 +40,6 @@ For the installed Windows WebView smoke test, launch with process-scoped `GCD_US
 
 ## Remaining target-device checks
 
-- Renew Claude Code sign-in and confirm the five-hour and weekly meters against the provider's usage page.
 - Inspect native meters in both appearances and at common DPI settings; move the Windows strip between monitors, disconnect a display, and restart.
 - Verify sleep/wake, offline recovery, reset boundaries, and stale-state readability during actual device use. Unit tests cover calculation boundaries and provider failures.
 - On a personal Mac, complete Gatekeeper approval, Keychain discovery, menu-bar interaction, launch-at-login, and a normal install/upgrade/uninstall.
