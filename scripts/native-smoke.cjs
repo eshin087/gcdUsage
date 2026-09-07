@@ -25,6 +25,10 @@ async function main() {
   await page.waitForFunction(() => !!window.__TAURI_INTERNALS__?.invoke);
   const invoke = (command, args = {}) => page.evaluate(({ command, args }) => window.__TAURI_INTERNALS__.invoke(command, args), { command, args });
 
+  await page.waitForFunction(async (expectHistory) => {
+    const current = await window.__TAURI_INTERNALS__.invoke('get_overview');
+    return !current.importing && (!expectHistory || current.stats.promptCount > 0);
+  }, process.env.GCD_QA_EXPECT_HISTORY === '1', { timeout: 120000, polling: 1000 });
   const overview = await invoke('get_overview');
   assert.ok(overview.settings.deviceId);
   assert.equal(await page.getByText('Design preview', { exact: false }).count(), 0);

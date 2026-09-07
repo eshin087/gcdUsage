@@ -116,7 +116,7 @@ pub fn show_dashboard(app: &AppHandle) -> Result<(), String> {
         let _ = window.unminimize();
         return window.set_focus().map_err(|e| e.to_string());
     }
-    tauri::WebviewWindowBuilder::new(
+    let window = tauri::WebviewWindowBuilder::new(
         app,
         "dashboard",
         tauri::WebviewUrl::App("index.html".into()),
@@ -125,9 +125,28 @@ pub fn show_dashboard(app: &AppHandle) -> Result<(), String> {
     .inner_size(1100.0, 760.0)
     .min_inner_size(760.0, 540.0)
     .center()
+    .data_directory(
+        std::env::var_os("GCD_USAGE_DATA_DIR")
+            .map(std::path::PathBuf::from)
+            .unwrap_or(app.path().app_local_data_dir().map_err(|e| e.to_string())?)
+            .join("webview"),
+    )
     .build()
-    .map(|_| ())
-    .map_err(|e| e.to_string())
+    .map_err(|e| e.to_string())?;
+    let handle = app.clone();
+    window.on_window_event(move |event| {
+        if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+            api.prevent_close();
+            // Release the webview before its last native window so its browser
+            // controller and environment cannot keep running after close.
+            if let Some(window) = handle.get_webview_window("dashboard") {
+                let webview: &tauri::Webview = window.as_ref();
+                let _ = webview.close();
+                let _ = window.destroy();
+            }
+        }
+    });
+    Ok(())
 }
 
 #[cfg(test)]

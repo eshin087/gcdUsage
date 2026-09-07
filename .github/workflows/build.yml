@@ -24,6 +24,7 @@ jobs:
             target: aarch64-apple-darwin
             bundles: app,dmg
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -33,6 +34,13 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: rust-${{ matrix.target }}-${{ hashFiles('src-tauri/Cargo.lock') }}
       - run: npm ci
       - run: npm run check
       - run: npm test
@@ -40,9 +48,26 @@ jobs:
       - run: npm run app:build -- --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
         env:
           APPLE_SIGNING_IDENTITY: '-'
+      - name: Smoke-test macOS background launch
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          GCD_TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          test_dir="$RUNNER_TEMP/gcd-usage-native-smoke"
+          mkdir -p "$test_dir"
+          printf '%s\n' '{"setupComplete":true,"launchAtLogin":false}' > "$test_dir/settings.json"
+          app_binary="src-tauri/target/$GCD_TARGET/release/bundle/macos/GCD Usage.app/Contents/MacOS/gcd-usage"
+          GCD_USAGE_TEST_MODE=1 GCD_USAGE_DATA_DIR="$test_dir" "$app_binary" --background > "$test_dir/app.log" 2>&1 &
+          app_pid=$!
+          trap 'kill "$app_pid" 2>/dev/null || true' EXIT
+          sleep 15
+          kill -0 "$app_pid"
+          ps -p "$app_pid" -o pid=,rss=,%cpu=,comm=
+          test -f "$test_dir/usage.sqlite3"
       - uses: actions/upload-artifact@v4
         with:
           name: gcd-usage-${{ matrix.target }}
           path: src-tauri/target/${{ matrix.target }}/release/bundle/
           if-no-files-found: error
-
