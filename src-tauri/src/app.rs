@@ -463,13 +463,11 @@ async fn maintenance(app: tauri::AppHandle, import: bool) {
     let outcome = tauri::async_runtime::spawn_blocking(move || {
         let state = a.state::<AppState>();
         let settings = lock(&state.settings).clone();
-        let accounts = state
-            .snapshots
-            .read()
-            .unwrap()
-            .iter()
-            .filter(|s| s.status == ConnectionStatus::Connected && !s.account_id.is_empty())
-            .map(|s| (s.provider, s.account_id.clone()))
+        // Cached account identity remains useful when sign-in has expired. Unknown
+        // identities are explicitly marked and never used for quota attribution.
+        let accounts = [Provider::Claude, Provider::Codex]
+            .into_iter()
+            .map(|provider| (provider, providers::current_account_id(&settings, provider)))
             .collect::<HashMap<_, _>>();
         let mut store = lock(&state.store);
         if import {

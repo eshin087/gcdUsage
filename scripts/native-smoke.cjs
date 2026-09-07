@@ -17,8 +17,11 @@ async function main() {
   const output = path.resolve(process.env.GCD_QA_OUTPUT_DIR || path.join(os.tmpdir(), 'gcd-usage-native-qa'));
   await fs.mkdir(output, { recursive: true });
   const browser = await chromium.connectOverCDP(process.env.GCD_QA_ENDPOINT || 'http://127.0.0.1:9223');
-  const pages = browser.contexts().flatMap(context => context.pages());
-  const page = pages.find(candidate => candidate.url().startsWith('http://tauri.localhost'));
+  let page;
+  for (let attempt = 0; attempt < 150 && !page; attempt++) {
+    page = browser.contexts().flatMap(context => context.pages()).find(candidate => candidate.url().startsWith('http://tauri.localhost'));
+    if (!page) await new Promise(resolve => setTimeout(resolve, 100));
+  }
   assert.ok(page, 'Expected the native GCD Usage dashboard WebView');
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
@@ -33,6 +36,10 @@ async function main() {
   assert.ok(overview.settings.deviceId);
   assert.equal(await page.getByText('Design preview', { exact: false }).count(), 0);
   await page.getByRole('heading', { name: 'Your usage, at a glance.' }).waitFor();
+  if (process.env.GCD_QA_EXPECT_HISTORY === '1') {
+    await page.waitForFunction(() => parseFloat(document.querySelector('.stat-item strong')?.textContent || '') > 0, null, { timeout: 30000 });
+  }
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   await page.screenshot({ path: path.join(output, 'native-overview.png'), fullPage: true });
 
   const history = await invoke('get_history', { filter: { limit: 50, offset: 0 } });
@@ -75,7 +82,7 @@ async function main() {
   assert.equal(restored.settings.setupComplete, true);
 
   const report = {
-    snapshots: restored.snapshots.map(snapshot => ({ provider: snapshot.provider, status: snapshot.status, windowCount: snapshot.windows.length })),
+    snapshots: restored.snapshots.map(snapshot => ({ provider: snapshot.provider, status: snapshot.status, message: snapshot.message, windowCount: snapshot.windows.length })),
     history: { prompts: history.total, pageSize: history.items.length, conversations: restored.stats.conversationCount, requests: restored.stats.requestCount },
     importing: restored.importing,
     importFiles: restored.importReport.files,

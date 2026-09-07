@@ -371,6 +371,12 @@ fn parse_claude_windows(value: &Value) -> Vec<QuotaWindow> {
 
 struct ClaudeCredentials {
     access_token: String,
+    expires_at_ms: Option<i64>,
+}
+impl ClaudeCredentials {
+    fn is_expired_at(&self, now_ms: i64) -> bool {
+        self.expires_at_ms.is_some_and(|expires| expires <= now_ms)
+    }
 }
 fn parse_claude_credentials(value: Value) -> Option<ClaudeCredentials> {
     value
@@ -379,6 +385,9 @@ fn parse_claude_credentials(value: Value) -> Option<ClaudeCredentials> {
         .filter(|s| !s.is_empty())
         .map(|s| ClaudeCredentials {
             access_token: s.to_owned(),
+            expires_at_ms: value
+                .pointer("/claudeAiOauth/expiresAt")
+                .and_then(Value::as_i64),
         })
 }
 
@@ -439,6 +448,11 @@ async fn claude_request(
     client: &reqwest::Client,
     credentials: &ClaudeCredentials,
 ) -> Result<reqwest::Response, Failure> {
+    if credentials.is_expired_at(Utc::now().timestamp_millis()) {
+        return Err(Failure::auth(
+            "Claude sign-in expired. Use Reconnect to sign in through Claude Code, then refresh.",
+        ));
+    }
     client
         .get(CLAUDE_USAGE_URL)
         .bearer_auth(&credentials.access_token)
@@ -1004,6 +1018,19 @@ mod tests {
             .access_token,
             "fixture-token"
         );
+    }
+    #[test]
+    fn cached_expiry_prevents_using_an_expired_sign_in() {
+        let known = parse_claude_credentials(
+            json!({"claudeAiOauth":{"accessToken":"fixture","expiresAt":1200}}),
+        )
+        .unwrap();
+        assert!(!known.is_expired_at(1199));
+        assert!(known.is_expired_at(1200));
+        assert!(known.is_expired_at(1201));
+        let unknown =
+            parse_claude_credentials(json!({"claudeAiOauth":{"accessToken":"fixture"}})).unwrap();
+        assert!(!unknown.is_expired_at(1200));
     }
     #[test]
     fn keychain_namespaces_are_stable_isolated_and_unicode_normalized() {
