@@ -1,0 +1,16 @@
+node_modules/
+dist/
+src-tauri/target/
+.tools/
+.local-test/
+*.log
+*.db
+*.db-shm
+*.db-wal
+
+.diagnostics/
+
+*.sqlite3
+*.sqlite3-shm
+*.sqlite3-wal
+src-tauri/gen/

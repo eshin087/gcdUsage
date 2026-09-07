@@ -1,0 +1,48 @@
+name: Desktop packages
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+permissions:
+  contents: read
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            bundles: nsis
+          - os: windows-11-arm
+            target: aarch64-pc-windows-msvc
+            bundles: nsis
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+            bundles: app,dmg
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            bundles: app,dmg
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - run: npm ci
+      - run: npm run check
+      - run: npm test
+      - run: cargo test --manifest-path src-tauri/Cargo.toml --lib --locked --target ${{ matrix.target }}
+      - run: npm run app:build -- --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
+        env:
+          APPLE_SIGNING_IDENTITY: '-'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gcd-usage-${{ matrix.target }}
+          path: src-tauri/target/${{ matrix.target }}/release/bundle/
+          if-no-files-found: error
+
