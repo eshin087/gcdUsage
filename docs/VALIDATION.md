@@ -8,6 +8,7 @@
 - An explicit dashboard-close event was confirmed; all child processes exited. The background app used approximately 43.2 MiB after the display checks. The local Windows installer is 2.58 MB.
 - Taskbar anchoring uses the monitor work area and locks dragging. Geometry tests cover bottom/top/left/right taskbars and DPI-sized strips; physical monitor rearrangement and auto-hide remain device checks. macOS colors in the system menu bar continue to follow macOS.
 - Repeat the native display checks with `scripts/display-smoke.cjs` using the isolated test environment described below.
+- All four target platforms passed the required test/build steps, and both Mac packages passed background launch in [the release build](https://github.com/eshin087/gcdUsage/actions/runs/34170544795). The [private 0.1.1 release](https://github.com/eshin087/gcdUsage/releases/tag/v0.1.1) contains four installers; uploaded SHA-256 digests were verified. Sizes are 2.58 MB (Windows x64), 2.30 MB (Windows ARM64), 3.40 MB (macOS Intel), and 3.11 MB (macOS Apple Silicon).
 
 ## v0.1.0 baseline
 

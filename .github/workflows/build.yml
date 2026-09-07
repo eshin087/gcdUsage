@@ -2,7 +2,7 @@ name: Desktop packages
 on:
   workflow_dispatch:
   push:
-    tags: ['v*']
+    tags: ["v*"]
 permissions:
   contents: read
 jobs:
@@ -42,13 +42,17 @@ jobs:
             src-tauri/target
           key: rust-${{ matrix.target }}-${{ hashFiles('src-tauri/Cargo.lock') }}
           restore-keys: rust-${{ matrix.target }}-
+      - name: Read application version
+        id: package_version
+        shell: bash
+        run: node -p "'version=' + require('./package.json').version" >> "$GITHUB_OUTPUT"
       - run: npm ci
       - run: npm run check
       - run: npm test
       - run: cargo test --manifest-path src-tauri/Cargo.toml --lib --locked --target ${{ matrix.target }}
       - run: npm run app:build -- --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
         env:
-          APPLE_SIGNING_IDENTITY: '-'
+          APPLE_SIGNING_IDENTITY: "-"
       - name: Smoke-test macOS background launch
         if: runner.os == 'macOS'
         shell: bash
@@ -70,5 +74,8 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: gcd-usage-${{ matrix.target }}
-          path: src-tauri/target/${{ matrix.target }}/release/bundle/
+          path: |
+            src-tauri/target/${{ matrix.target }}/release/bundle/nsis/*_${{ steps.package_version.outputs.version }}_*.exe
+            src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*_${{ steps.package_version.outputs.version }}_*.dmg
+            src-tauri/target/${{ matrix.target }}/release/bundle/macos/*.app/
           if-no-files-found: error
