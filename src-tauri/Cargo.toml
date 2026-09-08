@@ -1,6 +1,6 @@
 [package]
 name = "gcd-usage"
-version = "0.1.2"
+version = "0.1.3"
 description = "Glanceable AI usage, local prompt history, and model advice"
 edition = "2021"
 default-run = "gcd-usage"

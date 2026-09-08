@@ -6,7 +6,18 @@
     "dashboard"
   ],
   "permissions": [
-    "core:default",
-    "core:window:allow-close"
-  ]
+    "core:event:default",
+    "core:window:allow-close",
+    "allow-get-overview",
+    "allow-get-history",
+    "allow-get-usage-metrics",
+    "allow-get-recommendations",
+    "allow-refresh-usage",
+    "allow-import-history",
+    "allow-save-settings",
+    "allow-select-sync-folder",
+    "allow-export-history",
+    "allow-reconnect-provider"
+  ],
+  "local": true
 }

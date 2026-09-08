@@ -143,6 +143,22 @@ pub fn shutdown() {
     windows_strip::shutdown();
 }
 
+fn dashboard_navigation_allowed(url: &tauri::Url) -> bool {
+    if !url.username().is_empty() || url.password().is_some() {
+        return false;
+    }
+    let local =
+        (url.scheme() == "tauri" && url.host_str() == Some("localhost") && url.port().is_none())
+            || (url.scheme() == "http"
+                && url.host_str() == Some("tauri.localhost")
+                && url.port().is_none());
+    local
+        || (cfg!(debug_assertions)
+            && url.scheme() == "http"
+            && url.host_str() == Some("127.0.0.1")
+            && url.port() == Some(1420))
+}
+
 pub fn show_dashboard(app: &AppHandle) -> Result<(), String> {
     if let Some(window) = app.get_webview_window("dashboard") {
         let _ = window.show();
@@ -155,6 +171,8 @@ pub fn show_dashboard(app: &AppHandle) -> Result<(), String> {
         tauri::WebviewUrl::App("index.html".into()),
     )
     .title("GCD Usage")
+    .on_navigation(dashboard_navigation_allowed)
+    .on_new_window(|_, _| tauri::webview::NewWindowResponse::Deny)
     .theme(window_theme(crate::app::display_settings(app).0))
     .inner_size(1100.0, 760.0)
     .min_inner_size(760.0, 540.0)
@@ -197,5 +215,27 @@ mod tests {
         assert_eq!(countdown(Some(120), 0), "2m");
         assert_eq!(countdown(Some(0), 1), "refreshing");
         assert_eq!(countdown(None, 0), "N/A");
+    }
+    #[test]
+    fn security_blocks_external_navigation_and_origin_lookalikes() {
+        for value in [
+            "https://example.invalid",
+            "http://tauri.attacker.invalid",
+            "http://tauri.localhost.attacker.invalid",
+            "http://tauri.localhost:8000",
+            "file:///test",
+            "data:text/html,test",
+            "http://user@tauri.localhost",
+        ] {
+            assert!(!dashboard_navigation_allowed(
+                &tauri::Url::parse(value).unwrap()
+            ));
+        }
+        assert!(dashboard_navigation_allowed(
+            &tauri::Url::parse("http://tauri.localhost/index.html").unwrap()
+        ));
+        assert!(dashboard_navigation_allowed(
+            &tauri::Url::parse("tauri://localhost/index.html").unwrap()
+        ));
     }
 }

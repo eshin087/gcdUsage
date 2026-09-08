@@ -34,6 +34,39 @@ pub enum SyncEvent {
     },
 }
 
+pub(crate) fn validate_measurements(event: &SyncEvent) -> Result<(), String> {
+    let time = |value: i64| (0..=253_402_300_799).contains(&value);
+    let valid = match event {
+        SyncEvent::Prompt(p) => time(p.timestamp) && p.completed_at.is_none_or(time),
+        SyncEvent::Request(r) => {
+            time(r.timestamp)
+                && [
+                    r.tokens.input,
+                    r.tokens.cache_read,
+                    r.tokens.cache_write,
+                    r.tokens.output,
+                    r.tokens.reasoning,
+                ]
+                .into_iter()
+                .flatten()
+                .all(|n| n <= 1_000_000_000_000)
+        }
+        SyncEvent::Snapshot(s) => {
+            time(s.fetched_at)
+                && s.retry_after_seconds.is_none_or(|n| n <= 86400)
+                && s.windows.iter().all(|w| {
+                    w.resets_at.is_none_or(time) && (1..=525600).contains(&w.duration_minutes)
+                })
+        }
+        SyncEvent::Link { .. } => true,
+    };
+    if valid {
+        Ok(())
+    } else {
+        Err("Invalid history measurement".into())
+    }
+}
+
 pub struct Store {
     connection: Connection,
 }
@@ -57,7 +90,15 @@ impl Store {
             CREATE TABLE IF NOT EXISTS events(hash TEXT PRIMARY KEY, data TEXT NOT NULL, outbound INTEGER NOT NULL, exported INTEGER NOT NULL DEFAULT 0);
             CREATE TABLE IF NOT EXISTS batches(hash TEXT PRIMARY KEY);
             CREATE TABLE IF NOT EXISTS request_links(request_id TEXT PRIMARY KEY, provider TEXT NOT NULL, account_id TEXT NOT NULL, turn_id TEXT NOT NULL);
-            PRAGMA user_version=1;").map_err(|e|e.to_string())?;
+").map_err(|e|e.to_string())?;
+        let version: i64 = connection
+            .pragma_query_value(None, "user_version", |r| r.get(0))
+            .map_err(|e| e.to_string())?;
+        if version < 2 {
+            // Earlier releases updated JSON while retaining the indexed timestamp.
+            // Restore consistency without changing record identity or token data.
+            connection.execute_batch("BEGIN; UPDATE prompts SET data=json_set(data,'$.timestamp',timestamp,'$.sessionId',session_id) WHERE json_extract(data,'$.timestamp')!=timestamp OR json_extract(data,'$.sessionId')!=session_id; UPDATE requests SET data=json_set(data,'$.timestamp',timestamp,'$.sessionId',session_id) WHERE json_extract(data,'$.timestamp')!=timestamp OR json_extract(data,'$.sessionId')!=session_id; PRAGMA user_version=2; COMMIT;").map_err(|e|e.to_string())?;
+        }
         Ok(Self { connection })
     }
 
@@ -143,9 +184,23 @@ impl Store {
     }
 
     pub fn apply_event(&mut self, event: &SyncEvent, outbound: bool) -> Result<bool, String> {
+        validate_measurements(event)?;
         let mut normalized = event.clone();
-        if let SyncEvent::Prompt(p) = &mut normalized {
-            p.preview = p.preview.chars().take(160).collect();
+        match &mut normalized {
+            SyncEvent::Prompt(p) => {
+                p.preview = p.preview.chars().take(160).collect();
+                if let Some(prior) = self.prompt(&p.id)? {
+                    p.timestamp = prior.timestamp;
+                    p.session_id = prior.session_id;
+                }
+            }
+            SyncEvent::Request(r) => {
+                if let Some(prior) = self.request(&r.id)? {
+                    r.timestamp = prior.timestamp;
+                    r.session_id = prior.session_id;
+                }
+            }
+            _ => {}
         }
         // Provider messages can contain local installation details; never replicate them.
         let mut exported = normalized.clone();
@@ -167,7 +222,11 @@ impl Store {
             SyncEvent::Prompt(mut p) => {
                 let old = self.prompt(&p.id)?;
                 if let Some(ref prior) = old {
-                    if prior.provider != p.provider || prior.account_id != p.account_id {
+                    if prior.provider != p.provider
+                        || prior.account_id != p.account_id
+                        || prior.timestamp != p.timestamp
+                        || prior.session_id != p.session_id
+                    {
                         return Err("Conflicting prompt identity".into());
                     }
                     p.device_id = prior.device_id.clone().min(p.device_id);
@@ -185,7 +244,11 @@ impl Store {
             SyncEvent::Request(mut r) => {
                 let old = self.request(&r.id)?;
                 if let Some(ref prior) = old {
-                    if prior.provider != r.provider || prior.account_id != r.account_id {
+                    if prior.provider != r.provider
+                        || prior.account_id != r.account_id
+                        || prior.timestamp != r.timestamp
+                        || prior.session_id != r.session_id
+                    {
                         return Err("Conflicting request identity".into());
                     }
                     r.device_id = prior.device_id.clone().min(r.device_id);
@@ -230,6 +293,12 @@ impl Store {
                 account_id,
                 turn_id,
             } => {
+                if self
+                    .request(&request_id)?
+                    .is_some_and(|r| r.provider != provider || r.account_id != account_id)
+                {
+                    return Err("Conflicting request link identity".into());
+                }
                 self.connection
                     .execute(
                         "INSERT OR IGNORE INTO request_links VALUES(?1,?2,?3,?4)",
@@ -249,8 +318,9 @@ impl Store {
     }
 
     pub fn resolve_links(&mut self) -> Result<(), String> {
+        self.connection.execute("DELETE FROM request_links WHERE EXISTS(SELECT 1 FROM requests r WHERE r.id=request_links.request_id AND (r.provider!=request_links.provider OR r.account_id!=request_links.account_id))", []).map_err(|e|e.to_string())?;
         let links: Vec<(String, String)> = {
-            let mut q=self.connection.prepare("SELECT l.request_id,p.id FROM request_links l JOIN requests r ON r.id=l.request_id JOIN prompts p ON p.provider=l.provider AND p.account_id=l.account_id AND p.turn_id=l.turn_id AND p.timestamp<=r.timestamp WHERE p.kind='user' ORDER BY p.timestamp DESC").map_err(|e|e.to_string())?;
+            let mut q=self.connection.prepare("SELECT l.request_id,p.id FROM request_links l JOIN requests r ON r.id=l.request_id AND r.provider=l.provider AND r.account_id=l.account_id JOIN prompts p ON p.provider=l.provider AND p.account_id=l.account_id AND p.turn_id=l.turn_id AND p.timestamp<=r.timestamp WHERE p.kind='user' ORDER BY p.timestamp DESC").map_err(|e|e.to_string())?;
             let rows = q
                 .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
                 .map_err(|e| e.to_string())?;
@@ -518,20 +588,22 @@ impl Store {
                     .insert((r.model.clone(), r.effort.clone()));
             }
             let date = day(r.timestamp);
-            daily
+            let daily_tokens = &mut daily
                 .entry(date.clone())
                 .or_insert_with(|| DailyStat {
                     date,
                     ..Default::default()
                 })
-                .tokens += total;
+                .tokens;
+            *daily_tokens = daily_tokens.saturating_add(total);
             let group = groups
                 .entry((r.provider, r.account_id, r.model, r.effort))
                 .or_default();
             group.requests += 1;
-            group.total += total;
+            group.total = group.total.saturating_add(total);
             if let Some(id) = r.prompt_id.filter(|id| users.contains_key(id)) {
-                *group.prompts.entry(id).or_default() += total;
+                let value = group.prompts.entry(id).or_default();
+                *value = value.saturating_add(total);
             }
         }
         result.total_tokens = result.token_totals.total();
@@ -823,7 +895,7 @@ pub fn maximum_tokens(a: &TokenUsage, b: &TokenUsage) -> TokenUsage {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     pub fn prompt() -> PromptRecord {
         PromptRecord {
@@ -1074,5 +1146,52 @@ mod tests {
             .total,
             0
         );
+    }
+    #[test]
+    fn security_migration_repairs_legacy_json_without_changing_usage() {
+        let path =
+            std::env::temp_dir().join(format!("gcd-migration-{}.sqlite3", uuid::Uuid::new_v4()));
+        {
+            let mut store = Store::open(&path).unwrap();
+            store.save_prompt(&prompt()).unwrap();
+            store.save_request(&request()).unwrap();
+            store.connection.execute_batch("UPDATE prompts SET data=json_set(data,'$.timestamp',999999,'$.sessionId','changed'); UPDATE requests SET data=json_set(data,'$.timestamp',999999,'$.sessionId','changed'); PRAGMA user_version=1;").unwrap();
+        }
+        {
+            let store = Store::open(&path).unwrap();
+            assert_eq!(
+                store.prompt("p1").unwrap().unwrap().timestamp,
+                prompt().timestamp
+            );
+            let saved = store.request("r1").unwrap().unwrap();
+            assert_eq!(saved.timestamp, request().timestamp);
+            assert_eq!(saved.session_id, request().session_id);
+            assert_eq!(saved.tokens.output, request().tokens.output);
+            assert_eq!(store.stats(None, None).unwrap().request_count, 1);
+        }
+        std::fs::remove_file(path).unwrap();
+    }
+    #[test]
+    fn security_preserves_request_timestamps_and_rejects_cross_account_links() {
+        let mut store = Store::open(Path::new(":memory:")).unwrap();
+        store.save_prompt(&prompt()).unwrap();
+        store.save_request(&request()).unwrap();
+        let mut conflicting = request();
+        conflicting.timestamp += 86400;
+        store
+            .apply_event(&SyncEvent::Request(conflicting), false)
+            .unwrap();
+        assert_eq!(store.request("r1").unwrap().unwrap().timestamp, 120);
+        assert!(store
+            .apply_event(
+                &SyncEvent::Link {
+                    request_id: "r1".into(),
+                    provider: Provider::Codex,
+                    account_id: "different".into(),
+                    turn_id: "t".into()
+                },
+                false
+            )
+            .is_err());
     }
 }

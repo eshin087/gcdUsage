@@ -234,7 +234,10 @@ async fn select_sync_folder(app: tauri::AppHandle) -> Result<Option<String>, Str
     .map_err(|_| "Folder picker closed unexpectedly".into())
 }
 fn safe_csv(text: &str) -> String {
-    if text.starts_with(['=', '+', '-', '@', '\t', '\r']) {
+    let start = text.trim_start_matches(|c: char| c.is_whitespace() || c == '\u{feff}');
+    if text.starts_with(['\t', '\r', '\n'])
+        || start.starts_with(['=', '+', '-', '@', '＝', '＋', '－', '＠'])
+    {
         format!("'{text}")
     } else {
         text.to_string()
@@ -310,7 +313,7 @@ async fn export_history(
                     safe_csv(&item.prompt.device_id),
                     safe_csv(&item.prompt.session_id),
                     safe_csv(&item.prompt.preview),
-                    item.prompt.status.clone(),
+                    safe_csv(&item.prompt.status),
                     safe_csv(&models.join("; ")),
                     safe_csv(&efforts.join("; ")),
                     item.requests.len().to_string(),
@@ -396,7 +399,7 @@ async fn reconnect_provider(app: tauri::AppHandle, provider: Provider) -> Result
             "tell application \"Terminal\" to do script {}",
             serde_json::to_string(&command).unwrap()
         );
-        std::process::Command::new("osascript")
+        std::process::Command::new("/usr/bin/osascript")
             .args(["-e", &script])
             .spawn()
             .map_err(|_| "Could not open Terminal for sign-in".to_string())?;
@@ -629,13 +632,31 @@ pub fn run() {
         .setup(|app| {
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
-            let data = std::env::var_os("GCD_USAGE_DATA_DIR")
+            let data_override = std::env::var_os("GCD_USAGE_DATA_DIR");
+            let data = data_override
+                .clone()
                 .map(PathBuf::from)
                 .unwrap_or(app.path().app_local_data_dir()?);
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
+                fs::DirBuilder::new()
+                    .recursive(true)
+                    .mode(0o700)
+                    .create(&data)?;
+                // Tighten only our default app directory, never an arbitrary override.
+                if data_override.is_none() {
+                    fs::set_permissions(&data, fs::Permissions::from_mode(0o700))?;
+                }
+            }
+            #[cfg(not(unix))]
             fs::create_dir_all(&data)?;
             let settings_path = data.join("settings.json");
             let mut settings: AppSettings = if settings_path.exists() {
-                serde_json::from_slice(&fs::read(&settings_path)?)?
+                serde_json::from_slice(&crate::safety::read_file_limited(
+                    &settings_path,
+                    1024 * 1024,
+                )?)?
             } else {
                 AppSettings::default()
             };
@@ -764,5 +785,14 @@ mod tests {
     fn export_neutralizes_formulas() {
         assert_eq!(safe_csv("=SUM(A1)"), "'=SUM(A1)");
         assert_eq!(safe_csv("hello"), "hello");
+    }
+    #[test]
+    fn security_csv_neutralizes_whitespace_and_full_width_formulas() {
+        for text in ["=1+1", " \t=1+1", "\n=1+1", "＝1+1", "＠SUM(1)"] {
+            assert!(
+                safe_csv(text).starts_with('\''),
+                "formula-like text was not escaped"
+            );
+        }
     }
 }

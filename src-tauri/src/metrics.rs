@@ -45,6 +45,9 @@ impl Store {
         for row in prompts {
             let prompt: PromptRecord = serde_json::from_str(&row.map_err(|e| e.to_string())?)
                 .map_err(|e| e.to_string())?;
+            if prompt.timestamp < start || prompt.timestamp >= range.to {
+                return Err("Inconsistent history timestamp; statistics unavailable".into());
+            }
             stats.prompt_count += 1;
             devices.insert(prompt.device_id.clone());
             conversations.insert((prompt.provider, prompt.account_id, prompt.session_id));
@@ -83,12 +86,15 @@ impl Store {
                         ActivityKind::Review | ActivityKind::Background
                     )
             });
+            if request.timestamp < start || request.timestamp >= range.to {
+                return Err("Inconsistent history timestamp; statistics unavailable".into());
+            }
             let tokens = request.tokens.total();
             stats.request_count += 1;
             stats.token_totals.add(&request.tokens);
             devices.insert(request.device_id.clone());
             let bucket = &mut activity[((request.timestamp - start) / bucket_seconds) as usize];
-            bucket.tokens += tokens;
+            bucket.tokens = bucket.tokens.saturating_add(tokens);
             bucket.requests += 1;
             let group = groups
                 .entry((
@@ -99,12 +105,13 @@ impl Store {
                 ))
                 .or_default();
             group.requests += 1;
-            group.tokens += tokens;
+            group.tokens = group.tokens.saturating_add(tokens);
             if let Some(p) = user {
                 conversations.insert((p.provider, p.account_id, p.session_id));
-                *per_prompt.entry(p.id.clone()).or_default() += tokens;
+                let value = per_prompt.entry(p.id.clone()).or_default();
+                *value = value.saturating_add(tokens);
                 let entry = group.prompts.entry(p.id).or_default();
-                entry.0 += tokens;
+                entry.0 = entry.0.saturating_add(tokens);
                 entry.1 = p.status == "completed" && p.completed_at.is_some_and(|at| at < range.to);
             } else {
                 stats.background_requests += 1;

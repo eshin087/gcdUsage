@@ -10,7 +10,7 @@ use std::{
     time::Duration,
 };
 use tokio::{
-    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
+    io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
     process::{Child, ChildStdin, ChildStdout, Command},
 };
 
@@ -71,7 +71,7 @@ fn small_json(path: &Path) -> Option<Value> {
     if std::fs::metadata(path).ok()?.len() > MAX_RESPONSE as u64 {
         return None;
     }
-    serde_json::from_slice(&std::fs::read(path).ok()?).ok()
+    serde_json::from_slice(&crate::safety::read_file_limited(path, MAX_RESPONSE).ok()?).ok()
 }
 
 /// Stable opaque account scope, also used when importing local history. Never returns PII.
@@ -117,7 +117,7 @@ pub fn current_account_id(settings: &AppSettings, provider: Provider) -> String 
 }
 
 fn candidate_executable(path: PathBuf) -> Option<PathBuf> {
-    if !path.is_file() {
+    if !path.is_absolute() || !path.is_file() {
         return None;
     }
     #[cfg(windows)]
@@ -127,7 +127,7 @@ fn candidate_executable(path: PathBuf) -> Option<PathBuf> {
     {
         return None;
     }
-    Some(path)
+    std::fs::canonicalize(path).ok()
 }
 
 fn discover(name: &str, configured: Option<&str>) -> Option<PathBuf> {
@@ -420,10 +420,27 @@ async fn claude_credentials(settings: &AppSettings) -> Option<ClaudeCredentials>
             .stdin(Stdio::null())
             .stderr(Stdio::null())
             .kill_on_drop(true);
-        if let Ok(Ok(output)) = tokio::time::timeout(Duration::from_secs(5), command.output()).await
+        if let Ok(Some(output)) = tokio::time::timeout(Duration::from_secs(5), async {
+            let mut child = command.stdout(Stdio::piped()).spawn().ok()?;
+            let output = child.stdout.take()?;
+            let mut bytes = Vec::new();
+            output
+                .take((MAX_RESPONSE + 1) as u64)
+                .read_to_end(&mut bytes)
+                .await
+                .ok()?;
+            if bytes.len() > MAX_RESPONSE {
+                return None;
+            }
+            if !child.wait().await.ok()?.success() {
+                return None;
+            }
+            Some(bytes)
+        })
+        .await
         {
-            if output.status.success() && output.stdout.len() <= MAX_RESPONSE {
-                if let Ok(value) = serde_json::from_slice(&output.stdout) {
+            if output.len() <= MAX_RESPONSE {
+                if let Ok(value) = serde_json::from_slice(&output) {
                     if let Some(credentials) = parse_claude_credentials(value) {
                         return Some(credentials);
                     }
@@ -514,14 +531,18 @@ async fn poll_claude(
             "Claude returned an unexpected usage response.",
         ));
     }
-    let bytes = response
-        .bytes()
+    let mut bytes = Vec::new();
+    while let Some(chunk) = response
+        .chunk()
         .await
-        .map_err(|_| Failure::error("Claude returned an incomplete usage response."))?;
-    if bytes.len() > MAX_RESPONSE {
-        return Err(Failure::error(
-            "Claude returned an unexpected usage response.",
-        ));
+        .map_err(|_| Failure::error("Claude returned an incomplete usage response."))?
+    {
+        if chunk.len() > MAX_RESPONSE.saturating_sub(bytes.len()) {
+            return Err(Failure::error(
+                "Claude returned an unexpected usage response.",
+            ));
+        }
+        bytes.extend_from_slice(&chunk);
     }
     let value: Value = serde_json::from_slice(&bytes)
         .map_err(|_| Failure::error("Claude returned an unreadable usage response."))?;
@@ -534,6 +555,27 @@ async fn poll_claude(
         Some(current_account_id(settings, Provider::Claude)),
         parse_claude_windows(&value),
     ))
+}
+
+async fn read_server_line<R: AsyncBufRead + Unpin>(reader: &mut R) -> Result<String, Failure> {
+    let mut bytes = Vec::new();
+    let count = reader
+        .take((MAX_RESPONSE + 1) as u64)
+        .read_until(b'\n', &mut bytes)
+        .await
+        .map_err(|_| Failure::error("Could not read the Codex helper response."))?;
+    if count == 0 {
+        return Err(Failure::error(
+            "The Codex helper closed before returning usage.",
+        ));
+    }
+    if count > MAX_RESPONSE {
+        return Err(Failure::error(
+            "The Codex helper returned an unexpectedly large response.",
+        ));
+    }
+    String::from_utf8(bytes)
+        .map_err(|_| Failure::error("The Codex helper returned unreadable data."))
 }
 
 /// A separate process tree, stopped when this connection is dropped, including on cancellation.
@@ -687,22 +729,7 @@ impl OwnedServer {
         self.write(json!({"id":id,"method":method,"params":params}))
             .await?;
         loop {
-            let mut line = String::new();
-            let length = self
-                .output
-                .read_line(&mut line)
-                .await
-                .map_err(|_| Failure::error("Could not read the Codex helper response."))?;
-            if length == 0 {
-                return Err(Failure::error(
-                    "The Codex helper closed before returning usage.",
-                ));
-            }
-            if length > MAX_RESPONSE {
-                return Err(Failure::error(
-                    "The Codex helper returned an unexpectedly large response.",
-                ));
-            }
+            let line = read_server_line(&mut self.output).await?;
             let value: Value = match serde_json::from_str(&line) {
                 Ok(value) => value,
                 Err(_) => continue,
@@ -1069,5 +1096,24 @@ mod tests {
         assert_eq!(models.len(), 1);
         assert_eq!(models[0].efforts, vec!["low", "high"]);
         assert_eq!(models[0].quality_tier, 5);
+    }
+    #[test]
+    fn security_discovery_rejects_working_directory_executables() {
+        let relative = PathBuf::from(format!("gcd-security-{}.exe", uuid::Uuid::new_v4()));
+        std::fs::write(&relative, []).unwrap();
+        let accepted = candidate_executable(relative.clone()).is_some();
+        std::fs::remove_file(&relative).unwrap();
+        assert!(!accepted, "relative executable paths must not be trusted");
+    }
+
+    #[tokio::test]
+    async fn security_helper_lines_are_bounded_before_newline_or_eof() {
+        let data = vec![b'x'; MAX_RESPONSE + 2];
+        let mut reader = &data[..];
+        assert!(read_server_line(&mut reader).await.is_err());
+        assert_eq!(reader.len(), 1);
+        let mut valid = &b"{}\nrest"[..];
+        assert_eq!(read_server_line(&mut valid).await.unwrap(), "{}\n");
+        assert_eq!(valid, b"rest");
     }
 }

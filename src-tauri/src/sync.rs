@@ -22,8 +22,20 @@ pub fn synchronize(store: &mut Store, folder: &Path, device_id: &str) -> Result<
     let directory = folder.join("gcd-usage-v1");
     fs::create_dir_all(&directory)
         .map_err(|_| "Cannot create the GCD Usage folder in the selected shared folder.")?;
+    let expected_parent = folder
+        .canonicalize()
+        .map_err(|_| "Cannot inspect shared folder")?;
+    if directory
+        .canonicalize()
+        .map_err(|_| "Cannot inspect shared history directory")?
+        .parent()
+        != Some(expected_parent.as_path())
+    {
+        return Err("Shared history directory must stay inside the selected folder".into());
+    }
     let entries = fs::read_dir(&directory).map_err(|_| "Cannot read the shared folder.")?;
     let mut problems = 0;
+    let mut processed = 0;
     for entry in entries {
         let entry = match entry {
             Ok(v) => v,
@@ -60,9 +72,13 @@ pub fn synchronize(store: &mut Store, folder: &Path, device_id: &str) -> Result<
             problems += 1;
             continue;
         }
-        let data = match fs::read(&path) {
+        if processed >= 32 {
+            break;
+        }
+        let data = match crate::safety::read_file_limited(&path, MAX_BATCH_BYTES as usize) {
             Ok(bytes) => bytes,
             Err(_) => {
+                processed += 1;
                 problems += 1;
                 continue;
             }
@@ -75,6 +91,7 @@ pub fn synchronize(store: &mut Store, folder: &Path, device_id: &str) -> Result<
         if store.has_batch(&digest)? {
             continue;
         }
+        processed += 1;
         let batch = match serde_json::from_slice::<Batch>(&data) {
             Ok(batch) if batch.version == VERSION && batch.events.len() <= EVENTS_PER_BATCH => {
                 batch
@@ -100,7 +117,7 @@ pub fn synchronize(store: &mut Store, folder: &Path, device_id: &str) -> Result<
     }
     store.resolve_links()?;
     // Bounded batches avoid holding the full event history in memory.
-    loop {
+    for _ in 0..32 {
         let pending = store.pending_events(EVENTS_PER_BATCH)?;
         if pending.is_empty() {
             break;
@@ -164,6 +181,7 @@ fn validate_event(event: &SyncEvent) -> Result<(), String> {
     fn identifier(value: &str) -> bool {
         !value.is_empty() && value.len() <= 512 && !value.chars().any(char::is_control)
     }
+    crate::storage::validate_measurements(event)?;
     let valid = match event {
         SyncEvent::Prompt(p) => {
             identifier(&p.id)
@@ -280,6 +298,56 @@ mod tests {
         synchronize(&mut a, &folder, "a").unwrap();
         synchronize(&mut b, &folder, "b").unwrap();
         assert_eq!(b.latest_snapshots().unwrap()[0].message, None);
+        fs::remove_dir_all(folder).unwrap();
+    }
+    #[test]
+    fn bounded_sync_still_reaches_new_events_after_copied_batches() {
+        let folder = directory();
+        let mut a = Store::open(Path::new(":memory:")).unwrap();
+        let mut b = Store::open(Path::new(":memory:")).unwrap();
+        a.save_prompt(&crate::storage::tests::prompt()).unwrap();
+        synchronize(&mut a, &folder, "a").unwrap();
+        synchronize(&mut b, &folder, "b").unwrap();
+        let directory = folder.join("gcd-usage-v1");
+        let source = fs::read_dir(&directory)
+            .unwrap()
+            .next()
+            .unwrap()
+            .unwrap()
+            .path();
+        for index in 0..40 {
+            fs::copy(
+                &source,
+                directory.join(format!("batch-copy-{index:02}.json")),
+            )
+            .unwrap();
+        }
+        a.save_request(&crate::storage::tests::request()).unwrap();
+        synchronize(&mut a, &folder, "a").unwrap();
+        synchronize(&mut b, &folder, "b").unwrap();
+        assert_eq!(b.stats(None, None).unwrap().request_count, 1);
+        fs::remove_dir_all(folder).unwrap();
+    }
+    #[test]
+    fn security_rejects_extreme_measurements_and_rolls_back_whole_batch() {
+        let folder = directory();
+        fs::create_dir(folder.join("gcd-usage-v1")).unwrap();
+        let mut store = Store::open(Path::new(":memory:")).unwrap();
+        let valid = crate::storage::tests::prompt();
+        let mut invalid = crate::storage::tests::request();
+        invalid.tokens.input = Some(u64::MAX);
+        let batch = Batch {
+            version: VERSION,
+            device_id: "test".into(),
+            events: vec![SyncEvent::Prompt(valid), SyncEvent::Request(invalid)],
+        };
+        fs::write(
+            folder.join("gcd-usage-v1/batch-invalid.json"),
+            serde_json::to_vec(&batch).unwrap(),
+        )
+        .unwrap();
+        assert!(synchronize(&mut store, &folder, "test").is_err());
+        assert_eq!(store.stats(None, None).unwrap().prompt_count, 0);
         fs::remove_dir_all(folder).unwrap();
     }
 }

@@ -4,6 +4,7 @@ pub mod models;
 mod platform;
 pub mod providers;
 pub mod recommendation;
+mod safety;
 pub mod storage;
 pub mod sync;
 
