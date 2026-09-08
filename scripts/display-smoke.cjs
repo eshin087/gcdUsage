@@ -26,7 +26,7 @@ async function main() {
   const initial = await overview();
   assert.equal(initial.settings.theme, 'black');
   assert.equal(initial.settings.meterDisplay, 'remaining');
-  assert.equal(initial.settings.anchorToTaskbar, true);
+  assert.equal(initial.settings.stripLocked, false);
   await page.waitForFunction(() => document.documentElement.dataset.theme === 'black');
   assert.equal(await page.evaluate(() => getComputedStyle(document.documentElement).backgroundColor), 'rgb(0, 0, 0)');
 
@@ -83,22 +83,22 @@ async function main() {
     assert.equal((await overview()).settings.meterDisplay, mode);
     await checkMeters(mode);
   }
-  for (const anchored of [false, true]) {
+  for (const anchored of [true, false]) {
     await settingsPage();
-    await page.getByRole('checkbox', { name: /^Anchor to taskbar/ }).setChecked(anchored);
+    await page.getByRole('checkbox', { name: /^Lock strip position/ }).setChecked(anchored);
     await save();
-    assert.equal((await overview()).settings.anchorToTaskbar, anchored);
+    assert.equal((await overview()).settings.stripLocked, anchored);
   }
   await page.reload();
   await page.waitForFunction(() => !!window.__TAURI_INTERNALS__?.invoke);
   const final = await overview();
   assert.equal(final.settings.theme, 'black');
   assert.equal(final.settings.meterDisplay, 'remaining');
-  assert.equal(final.settings.anchorToTaskbar, true);
+  assert.equal(final.settings.stripLocked, false);
   assert.equal(final.settings.deviceId, initial.settings.deviceId);
   await checkMeters('remaining');
   assert.deepEqual(errors, []);
-  const report = { palettes, percentageModes: ['remaining', 'used'], anchorModes: [false, true], persistedAfterReload: true, browserErrors: errors };
+  const report = { palettes, percentageModes: ['remaining', 'used'], positionLockModes: [true, false], persistedAfterReload: true, browserErrors: errors };
   await fs.writeFile(path.join(out, 'display-report.json'), JSON.stringify(report, null, 2));
   console.log(JSON.stringify(report, null, 2));
   const closed = page.waitForEvent('close', { timeout: 10000 });

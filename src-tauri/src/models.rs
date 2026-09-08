@@ -171,6 +171,42 @@ pub struct DailyStat {
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct MetricsRange {
+    pub from: Option<i64>,
+    /// Exclusive end: adjacent intervals never double count a request.
+    pub to: i64,
+}
+impl MetricsRange {
+    pub fn validate(&self) -> Result<(), String> {
+        if !(1..=253_402_300_799).contains(&self.to)
+            || self.from.is_some_and(|from| from < 0 || from >= self.to)
+        {
+            return Err("Choose a valid start time before the end time".into());
+        }
+        Ok(())
+    }
+}
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ActivityBucket {
+    pub timestamp: i64,
+    pub prompts: u64,
+    pub tokens: u64,
+    pub requests: u64,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UsageMetrics {
+    pub range: MetricsRange,
+    pub bucket_seconds: i64,
+    pub activity: Vec<ActivityBucket>,
+    /// User prompts with at least one request recorded during the interval,
+    /// including prompts started earlier. These are the percentile population.
+    pub active_prompt_count: u64,
+    pub stats: DashboardStats,
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ModelStat {
     pub provider: Provider,
     #[serde(default)]
@@ -270,7 +306,8 @@ pub struct AppSettings {
     pub setup_complete: bool,
     pub theme: ColorTheme,
     pub meter_display: MeterDisplay,
-    pub anchor_to_taskbar: bool,
+    pub strip_locked: bool,
+    pub font_scale: u16,
 }
 impl Default for AppSettings {
     fn default() -> Self {
@@ -292,7 +329,8 @@ impl Default for AppSettings {
             setup_complete: false,
             theme: ColorTheme::Black,
             meter_display: MeterDisplay::Remaining,
-            anchor_to_taskbar: true,
+            strip_locked: false,
+            font_scale: 120,
         }
     }
 }
@@ -367,10 +405,11 @@ mod display_settings_tests {
     use super::*;
     #[test]
     fn existing_settings_get_display_defaults_without_losing_identity_or_positions() {
-        let settings: AppSettings = serde_json::from_value(serde_json::json!({"deviceId":"existing","stripX":-1500,"stripY":200,"setupComplete":true,"launchAtLogin":false})).unwrap();
+        let settings: AppSettings = serde_json::from_value(serde_json::json!({"deviceId":"existing","stripX":-1500,"stripY":200,"setupComplete":true,"launchAtLogin":false,"anchorToTaskbar":true})).unwrap();
         assert_eq!(settings.theme, ColorTheme::Black);
         assert_eq!(settings.meter_display, MeterDisplay::Remaining);
-        assert!(settings.anchor_to_taskbar);
+        assert!(!settings.strip_locked);
+        assert_eq!(settings.font_scale, 120);
         assert_eq!(settings.device_id, "existing");
         assert_eq!(settings.strip_x, Some(-1500));
         assert_eq!(settings.strip_y, Some(200));

@@ -43,13 +43,14 @@ fn persist(path: &Path, settings: &AppSettings) -> Result<(), String> {
     fs::write(&temporary, text).map_err(|_| "Cannot write local settings".to_string())?;
     fs::rename(&temporary, path).map_err(|_| "Cannot save local settings".to_string())
 }
-pub(crate) fn display_settings(app: &tauri::AppHandle) -> (ColorTheme, MeterDisplay, bool) {
+pub(crate) fn display_settings(app: &tauri::AppHandle) -> (ColorTheme, MeterDisplay, bool, u16) {
     let state = app.state::<AppState>();
     let settings = lock(&state.settings);
     (
         settings.theme,
         settings.meter_display,
-        settings.anchor_to_taskbar,
+        settings.strip_locked,
+        settings.font_scale.clamp(90, 160),
     )
 }
 pub fn strip_position(app: &tauri::AppHandle) -> Option<(i32, i32)> {
@@ -89,6 +90,18 @@ async fn get_history(app: tauri::AppHandle, filter: HistoryFilter) -> Result<His
     })
     .await
     .map_err(|_| "History worker stopped".to_string())?
+}
+#[tauri::command]
+async fn get_usage_metrics(
+    app: tauri::AppHandle,
+    range: MetricsRange,
+) -> Result<UsageMetrics, String> {
+    range.validate()?;
+    tauri::async_runtime::spawn_blocking(move || {
+        lock(&app.state::<AppState>().store).usage_metrics(range)
+    })
+    .await
+    .map_err(|_| "Statistics worker stopped".to_string())?
 }
 #[tauri::command]
 fn get_recommendations(state: tauri::State<'_, AppState>, task: TaskClass) -> RecommendationSet {
@@ -147,6 +160,9 @@ fn save_settings(app: tauri::AppHandle, mut settings: AppSettings) -> Result<App
     }
     if !(60..=3600).contains(&settings.refresh_seconds) {
         return Err("Refresh interval must be between 60 and 3600 seconds".into());
+    }
+    if !(90..=160).contains(&settings.font_scale) {
+        return Err("Font size must be between 90 and 160 percent".into());
     }
     if settings.device_name.trim().is_empty() {
         return Err("Enter a computer name".into());
@@ -601,6 +617,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_overview,
             get_history,
+            get_usage_metrics,
             get_recommendations,
             refresh_usage,
             import_history,
@@ -617,11 +634,12 @@ pub fn run() {
                 .unwrap_or(app.path().app_local_data_dir()?);
             fs::create_dir_all(&data)?;
             let settings_path = data.join("settings.json");
-            let settings: AppSettings = if settings_path.exists() {
+            let mut settings: AppSettings = if settings_path.exists() {
                 serde_json::from_slice(&fs::read(&settings_path)?)?
             } else {
                 AppSettings::default()
             };
+            settings.font_scale = settings.font_scale.clamp(90, 160);
             persist(&settings_path, &settings).map_err(std::io::Error::other)?;
             let store = Store::open(&data.join("usage.sqlite3")).map_err(std::io::Error::other)?;
             let snapshots = store.latest_snapshots().unwrap_or_default();

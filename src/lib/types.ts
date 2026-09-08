@@ -89,6 +89,23 @@ export interface DailyStat {
   prompts: number;
   tokens: number;
 }
+export interface MetricsRange {
+  from: number | null;
+  to: number;
+}
+export interface ActivityBucket {
+  timestamp: number;
+  prompts: number;
+  tokens: number;
+  requests: number;
+}
+export interface UsageMetrics {
+  range: MetricsRange;
+  bucketSeconds: number;
+  activity: ActivityBucket[];
+  activePromptCount: number;
+  stats: DashboardStats;
+}
 export interface ModelStat {
   provider: Provider;
   accountId?: string | null;
@@ -152,7 +169,8 @@ export interface AppSettings {
   setupComplete: boolean;
   theme: ColorTheme;
   meterDisplay: MeterDisplay;
-  anchorToTaskbar: boolean;
+  stripLocked: boolean;
+  fontScale: number;
 }
 export interface Recommendation {
   provider: Provider;

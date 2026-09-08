@@ -93,7 +93,7 @@ pub fn create(app: &AppHandle) {
     let _ = app;
 }
 pub fn update(app: &AppHandle, snapshots: &[QuotaSnapshot]) {
-    let (theme, display, _) = crate::app::display_settings(app);
+    let (theme, display, _, _) = crate::app::display_settings(app);
     let cells = cells(snapshots, Utc::now().timestamp(), display);
     if let Some(window) = app.get_webview_window("dashboard") {
         let _ = window.set_theme(window_theme(theme));

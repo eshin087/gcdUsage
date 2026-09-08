@@ -103,10 +103,10 @@ pub fn settings_changed() {
         }
     }
 }
-fn anchored() -> bool {
+fn locked() -> bool {
     APP.get()
         .map(|app| crate::app::display_settings(app).2)
-        .unwrap_or(true)
+        .unwrap_or(false)
 }
 pub fn shutdown() {
     let hwnd = HANDLE.load(Ordering::Acquire) as HWND;
@@ -130,7 +130,7 @@ unsafe fn position_window(hwnd: HWND, saved: Option<(i32, i32)>) {
     if GetMonitorInfoW(monitor, &mut info) == 0 {
         return;
     }
-    let scale = GetDpiForWindow(hwnd).max(96) as f64 / 96.0;
+    let scale = display_scale(hwnd);
     let width = ((500.0 * scale) as i32)
         .min(info.rcWork.right - info.rcWork.left)
         .max(1);
@@ -149,13 +149,13 @@ unsafe fn position_window(hwnd: HWND, saved: Option<(i32, i32)>) {
         convert(info.rcWork),
         (width, height),
         saved,
-        anchored(),
+        false,
         margin,
     );
     SetWindowTextW(
         hwnd,
-        wide(if anchored() {
-            "GCD Usage · anchored to taskbar · click to open"
+        wide(if locked() {
+            "GCD Usage · position locked · click to open"
         } else {
             "GCD Usage · drag the left grip, click to open"
         })
@@ -169,6 +169,13 @@ unsafe fn position_window(hwnd: HWND, saved: Option<(i32, i32)>) {
         return;
     }
     SetWindowPos(hwnd, HWND_TOPMOST, x, y, width, height, SWP_NOACTIVATE);
+}
+unsafe fn display_scale(hwnd: HWND) -> f64 {
+    let font = APP
+        .get()
+        .map(|app| crate::app::display_settings(app).3)
+        .unwrap_or(120);
+    GetDpiForWindow(hwnd).max(96) as f64 / 96.0 * font as f64 / 100.0
 }
 unsafe fn light_theme() -> bool {
     let mut value = 1u32;
@@ -239,9 +246,10 @@ unsafe fn paint(hwnd: HWND) {
     FillRect(dc, &edge, accent);
     DeleteObject(accent);
     SetBkMode(dc, TRANSPARENT as i32);
-    let dpi = GetDpiForWindow(hwnd).max(96) as i32;
+    let scale = display_scale(hwnd);
+    let px = |value: f64| (value * scale).round() as i32;
     let label_font = CreateFontW(
-        -11 * dpi / 96,
+        px(-11.0),
         0,
         0,
         0,
@@ -257,7 +265,7 @@ unsafe fn paint(hwnd: HWND) {
         wide("Segoe UI").as_ptr(),
     );
     let value_font = CreateFontW(
-        -14 * dpi / 96,
+        px(-14.0),
         0,
         0,
         0,
@@ -275,12 +283,12 @@ unsafe fn paint(hwnd: HWND) {
     let old = SelectObject(dc, label_font);
     SetTextColor(dc, muted);
     let mut grip = RECT {
-        left: 8 * dpi / 96,
+        left: px(8.0),
         top: 0,
-        right: 25 * dpi / 96,
+        right: px(25.0),
         bottom: bounds.bottom,
     };
-    let grip_text = wide(if anchored() { "•" } else { "⠿" });
+    let grip_text = wide(if locked() { "•" } else { "⠿" });
     DrawTextW(
         dc,
         grip_text.as_ptr(),
@@ -294,7 +302,7 @@ unsafe fn paint(hwnd: HWND) {
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .clone();
-    let start = 32 * dpi / 96;
+    let start = px(32.0);
     let cell_width = (bounds.right - start) / 3;
     for (i, (label, value, stale)) in cells.iter().enumerate() {
         SelectObject(dc, label_font);
@@ -302,9 +310,9 @@ unsafe fn paint(hwnd: HWND) {
         let left = start + i as i32 * cell_width;
         let mut label_rect = RECT {
             left,
-            top: 7 * dpi / 96,
-            right: left + cell_width - 8 * dpi / 96,
-            bottom: 24 * dpi / 96,
+            top: px(7.0),
+            right: left + cell_width - px(8.0),
+            bottom: px(24.0),
         };
         DrawTextW(
             dc,
@@ -317,9 +325,9 @@ unsafe fn paint(hwnd: HWND) {
         SetTextColor(dc, if *stale { muted } else { foreground });
         let mut value_rect = RECT {
             left,
-            top: 26 * dpi / 96,
-            right: left + cell_width - 8 * dpi / 96,
-            bottom: 49 * dpi / 96,
+            top: px(26.0),
+            right: left + cell_width - px(8.0),
+            bottom: px(49.0),
         };
         DrawTextW(
             dc,
@@ -346,7 +354,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             let mut rect: RECT = std::mem::zeroed();
             GetWindowRect(hwnd, &mut rect);
             let x = (lparam as u32 & 0xffff) as i16 as i32;
-            if !anchored() && x - rect.left < 28 * GetDpiForWindow(hwnd).max(96) as i32 / 96 {
+            if !locked() && x - rect.left < (28.0 * display_scale(hwnd)).round() as i32 {
                 HTCAPTION as isize
             } else {
                 HTCLIENT as isize
@@ -366,7 +374,7 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             GetWindowRect(hwnd, &mut rect);
             position_window(hwnd, Some((rect.left, rect.top)));
             GetWindowRect(hwnd, &mut rect);
-            if !anchored() {
+            if !locked() {
                 if let Some(app) = APP.get() {
                     crate::save_strip_position(app, rect.left, rect.top);
                 }
@@ -400,11 +408,6 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             0
         }
         REPAINT => {
-            if anchored() {
-                let mut rect: RECT = std::mem::zeroed();
-                GetWindowRect(hwnd, &mut rect);
-                position_window(hwnd, Some((rect.left, rect.top)));
-            }
             InvalidateRect(hwnd, null(), 0);
             0
         }

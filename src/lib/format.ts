@@ -117,6 +117,10 @@ export function buildHistoryFilter(
 ): HistoryFilter {
   const dateEpoch = (value: string, end: boolean): number | null => {
     if (!value) return null;
+    if (value.includes("T")) {
+      const exact = new Date(value).getTime() / 1000;
+      return Number.isFinite(exact) ? Math.floor(exact) : null;
+    }
     const date = new Date(`${value}T00:00:00`);
     if (!Number.isFinite(date.getTime())) return null;
     if (end) date.setDate(date.getDate() + 1);

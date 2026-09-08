@@ -4,7 +4,7 @@ A small desktop companion for Claude Code and Codex: glanceable quota meters, lo
 
 ## What it shows
 
-- **Windows 11:** a native strip anchored against the taskbar edge by default. Click a meter to open the dashboard. In Settings → Appearance, turn off **Anchor to taskbar** to drag the left grip freely; turn it back on to lock the strip to that monitor’s taskbar edge. It does not keep a browser running for the strip.
+- **Windows 11:** a freely movable native strip. Drag the grip at the left end to place it anywhere in the desktop work area; its position is saved. Click a meter to open the dashboard. Settings → Appearance offers **Lock strip position** to prevent accidental movement. No browser stays running for the strip.
 - **macOS 13+:** compact menu-bar labels for Claude's five-hour and weekly limits and Codex's weekly limit. Keep the macOS menu bar visible if you want to glance without hovering.
 - **Dashboard:** Overview, filtered prompt History, Recommendations, and Settings. Closing it destroys the webview while collection continues. Quit completely from the tray menu.
 
@@ -12,13 +12,13 @@ Percentages show **left** by default. Settings → Appearance lets you choose pe
 
 Ordinary ChatGPT and Claude browser conversations are outside v1. ChatGPT Work and Codex share a quota; an ordinary ChatGPT chat counter is not represented as Codex usage.
 
-The default theme is **Black**. Choose Black, Slate, Midnight, Light, or System in Settings → Appearance. Themes apply to the dashboard and native Windows strip; macOS menu-bar colors follow macOS. Appearance preferences stay on each computer.
+The default theme is **Black**. Choose Black, Slate, Midnight, Light, or System in Settings → Appearance. Themes apply to the dashboard and native Windows strip; macOS menu-bar colors follow macOS. Text starts at **120%**; the **Font size** slider adjusts it from 90% to 160%. The Windows strip resizes with its text. macOS menu-bar text size follows macOS; the dashboard slider works on both platforms. Appearance preferences stay on each computer.
 
-Windows 11 does not expose a supported extension for embedding custom text inside its taskbar. Anchoring keeps this app’s separate strip against the taskbar edge; it does not modify Explorer or reserve an entire row of screen space.
+Windows 11’s supported [widget API](https://learn.microsoft.com/en-us/windows/apps/develop/widgets/) places third-party content in the Widgets board, not a persistent custom text area in the taskbar. Literal in-taskbar meters require undocumented Explorer integration (see [implementation limitations](https://github.com/pfcdev/TaskbarWidgets/blob/main/docs/windows-private-api-risks.md)). GCD Usage uses the movable-strip fallback and does not modify Explorer. Upgrading from 0.1.1 removes the old default edge anchoring.
 
 ## Downloads
 
-Get the personal preview from the [private GitHub release](https://github.com/eshin087/gcdUsage/releases/tag/v0.1.1), signed in as an account with repository access. Choose Windows x64 or ARM64, or macOS Intel or Apple Silicon. Windows packages install per user; Mac DMGs contain an application bundle to drag into Applications. Updates are manual.
+Get the personal preview from the [private GitHub release](https://github.com/eshin087/gcdUsage/releases/tag/v0.1.2), signed in as an account with repository access. Choose Windows x64 or ARM64, or macOS Intel or Apple Silicon. Windows packages install per user; Mac DMGs contain an application bundle to drag into Applications. Updates are manual.
 
 ## First setup
 
@@ -29,6 +29,14 @@ Get the personal preview from the [private GitHub release](https://github.com/es
 5. Finish setup. Existing local logs import in the background; the history continues to update as you work.
 
 No API key, server, app account, or model call is required. Recommendations do not spend AI allowance. Provider logins remain separate on each computer.
+
+## Choose a usage interval
+
+In Overview, use **Time range**: last 30 minutes, 1 hour, 6 hours, 24 hours, 7 days, this week, 30 days, this month, all time, or a custom start/end date and time. Selection is remembered on this computer. Rolling intervals update every 30 seconds while the dashboard is open; they do not trigger provider calls. Calendar weeks start Monday in local time. Custom intervals include the start and exclude the end.
+
+The interval updates measured tokens, cache/input/output/reasoning breakdown, new prompt counts, active conversations, model requests, median/p75 consumption, the activity chart, and the complete model/reasoning table. Requests from prompts started earlier are counted when recorded, including attributable subagents; they are not mislabeled as background work. Per-prompt figures use only the tokens inside the interval, across active user prompts. Automatic reviews and unmatched requests remain separate background activity. Counts reflect the records currently imported, so missing logs can leave incomplete coverage.
+
+**Explore history** carries the interval into the prompt start-time filters, which accept dates and times down to seconds. History rows continue to show each matching prompt's complete recorded request usage; continuing prompts started earlier appear in interval metrics but will not match these start-time filters. The current allowance meters, all-time quota accounting, and 30-day model-advice calibration keep their own explicit periods.
 
 ## History and interpretation
 

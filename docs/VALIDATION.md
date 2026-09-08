@@ -1,5 +1,16 @@
 # Validation record
 
+## v0.1.2 intervals and readability
+
+- 52 Rust tests and 12 frontend tests passed, with zero Svelte/TypeScript errors or warnings. Interval tests cover exclusive end boundaries, carry-in prompts, subagents, duplicate requests, model/effort changes, account boundaries, overlapping reasoning tokens, empty ranges, and bounded chart allocation. Frontend tests cover rolling durations, local calendar weeks/months, custom seconds, invalid dates, and history boundary conversion.
+- The isolated Windows app queried a copy of real history containing 14,467 requests. Six intervals (30 minutes through all time) matched independent SQLite request counts and token sums. Model-group totals and chart totals matched the same records. Queries took 7–83 ms on this computer.
+- Native UI checks exercised all ten interval choices, invalid and empty custom ranges, history navigation, persisted interval selection, and font sizes 90%, 120%, and 160%. No browser errors were observed. Screenshots were inspected locally; they are excluded from the repository.
+- Existing 0.1.1 settings migrate to an unlocked strip at 120% text size while preserving theme, percentage mode, device identity, and saved position. Lock position is a separate optional setting; it does not snap to the taskbar. Native fonts, strip size, margins, and drag grip share the same DPI and text scale.
+- After explicit dashboard close, its browser child processes exited. The isolated background app measured 34.9 MiB working set and 11.8 MiB private memory, with no children. Provider helpers and imports remain temporary costs.
+- Repeat the native interval checks with `scripts/interval-smoke.cjs`; repeat theme, percentage, and position-lock checks with `scripts/display-smoke.cjs`. Use the private isolated test environment described below.
+- Windows installation and release builds are recorded after packaging. Physical dragging across mixed-DPI monitors and interactive macOS menu-bar checks remain target-device checks.
+
+
 ## v0.1.1 display update
 
 - 50 Rust tests and eight frontend tests pass, with zero Svelte/TypeScript errors or warnings. New checks cover migration of existing settings, remaining-versus-used arithmetic, missing measurements, taskbar edges, scaled geometry, and secondary displays with negative coordinates.

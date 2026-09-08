@@ -1,4 +1,6 @@
 //! Local, versioned storage. Provider logs and credentials are never written here.
+#[path = "metrics.rs"]
+mod metrics;
 use crate::models::*;
 use chrono::{DateTime, Utc};
 use rusqlite::{params, params_from_iter, types::Value as SqlValue, Connection, OptionalExtension};

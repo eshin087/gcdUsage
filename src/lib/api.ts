@@ -1,6 +1,8 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import type {
   AppSettings,
+  MetricsRange,
+  UsageMetrics,
   HistoryFilter,
   HistoryPage,
   Overview,
@@ -27,6 +29,8 @@ async function call<T>(
 }
 export const api = {
   overview: () => call<Overview>("get_overview"),
+  metrics: (range: MetricsRange) =>
+    call<UsageMetrics>("get_usage_metrics", { range }),
   history: (filter: HistoryFilter) =>
     call<HistoryPage>("get_history", { filter }),
   recommendations: (task: TaskClass) =>

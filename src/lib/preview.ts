@@ -1,6 +1,10 @@
 // Explicitly opt-in development fixtures, never used by the desktop app.
+import { emptyTokens, totalTokens } from "./format";
 import type {
   AppSettings,
+  UsageMetrics,
+  MetricsRange,
+  ModelStat,
   HistoryFilter,
   HistoryItem,
   Overview,
@@ -25,7 +29,8 @@ const settings: AppSettings = {
   setupComplete: true,
   theme: "black",
   meterDisplay: "remaining",
-  anchorToTaskbar: true,
+  stripLocked: false,
+  fontScale: 120,
 };
 const prompts = [
   "Add keyboard navigation to the command palette and preserve the selected item.",
@@ -226,6 +231,105 @@ export async function previewInvoke<T>(
   switch (command) {
     case "get_overview":
       return structuredClone(overview) as T;
+    case "get_usage_metrics": {
+      const range = args.range as MetricsRange;
+      const selected = items.filter(
+        (item) =>
+          item.prompt.timestamp >= (range.from ?? 0) &&
+          item.prompt.timestamp < range.to,
+      );
+      const totals = emptyTokens();
+      const models = new Map<string, ModelStat>();
+      const modelSamples = new Map<string, number[]>();
+      for (const item of selected)
+        for (const request of item.requests) {
+          for (const key of [
+            "input",
+            "cacheRead",
+            "cacheWrite",
+            "output",
+            "reasoning",
+          ] as const) {
+            if (request.tokens[key] != null)
+              totals[key] = (totals[key] ?? 0) + request.tokens[key];
+          }
+          const key = request.model + ":" + request.effort;
+          const row = models.get(key) ?? {
+            provider: request.provider,
+            model: request.model,
+            effort: request.effort,
+            promptCount: 0,
+            completedPrompts: 0,
+            requestCount: 0,
+            totalTokens: 0,
+            medianTokens: 0,
+            p75Tokens: 0,
+            estimatedQuotaPerPrompt: null,
+            quotaSampleCount: 0,
+          };
+          row.promptCount++;
+          row.completedPrompts++;
+          row.requestCount++;
+          row.totalTokens += totalTokens(request.tokens) ?? 0;
+          const values = modelSamples.get(key) ?? [];
+          values.push(totalTokens(request.tokens) ?? 0);
+          values.sort((a, b) => a - b);
+          modelSamples.set(key, values);
+          row.medianTokens = values[Math.ceil(values.length * 0.5) - 1];
+          row.p75Tokens = values[Math.ceil(values.length * 0.75) - 1];
+          models.set(key, row);
+        }
+      const start =
+        range.from ??
+        Math.min(range.to - 1, ...items.map((item) => item.prompt.timestamp));
+      const bucketSeconds = range.to - start <= 3600 ? 60 : 3600;
+      const activity = Array.from(
+        { length: Math.ceil((range.to - start) / bucketSeconds) },
+        (_, i) => ({
+          timestamp: start + i * bucketSeconds,
+          tokens: 0,
+          prompts: 0,
+          requests: 0,
+        }),
+      );
+      for (const item of selected) {
+        const bucket =
+          activity[Math.floor((item.prompt.timestamp - start) / bucketSeconds)];
+        bucket.prompts++;
+        bucket.requests += item.requests.length;
+        bucket.tokens += totalTokens(item.tokens) ?? 0;
+      }
+      const samples = selected
+        .map((item) => totalTokens(item.tokens) ?? 0)
+        .sort((a, b) => a - b);
+      const result: UsageMetrics = {
+        range,
+        bucketSeconds,
+        activity,
+        activePromptCount: selected.length,
+        stats: {
+          promptCount: selected.length,
+          conversationCount: new Set(
+            selected.map((item) => item.prompt.sessionId),
+          ).size,
+          requestCount: selected.reduce(
+            (sum, item) => sum + item.requests.length,
+            0,
+          ),
+          totalTokens: totalTokens(totals) ?? 0,
+          tokenTotals: totals,
+          medianTokens:
+            samples[Math.max(0, Math.ceil(samples.length * 0.5) - 1)] ?? 0,
+          p75Tokens:
+            samples[Math.max(0, Math.ceil(samples.length * 0.75) - 1)] ?? 0,
+          daily: [],
+          modelStats: [...models.values()],
+          computers: [...new Set(selected.map((item) => item.prompt.deviceId))],
+          backgroundRequests: 0,
+        },
+      };
+      return result as T;
+    }
     case "get_history": {
       const filter = args.filter as HistoryFilter;
       const filtered = items.filter(

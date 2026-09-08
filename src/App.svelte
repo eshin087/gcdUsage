@@ -1,4 +1,11 @@
 <script lang="ts">
+  import {
+    localDateTime,
+    rangeDescription,
+    resolveRange,
+    timePresets,
+    type TimePreset,
+  } from "./lib/time-range";
   import { onMount } from "svelte";
   import { version } from "../package.json";
   import { listen } from "@tauri-apps/api/event";
@@ -17,6 +24,8 @@
   import type { FilterInputs } from "./lib/format";
   import type {
     AppSettings,
+    UsageMetrics,
+    MetricsRange,
     HistoryItem,
     HistoryPage,
     Overview,
@@ -63,17 +72,26 @@
     from: "",
     to: "",
   });
+  let metrics = $state<UsageMetrics | null>(null);
+  let metricsLoading = $state(true);
+  let metricsError = $state("");
+  let timePreset = $state<TimePreset>("24h");
+  let customFrom = $state(localDateTime(Math.floor(Date.now() / 1000) - 86400));
+  let customTo = $state(localDateTime(Math.floor(Date.now() / 1000)));
+  let metricsClock = $state(Math.floor(Date.now() / 1000));
+  let metricsRequest = 0;
   let historyRequest = 0;
   let adviceRequest = 0;
   let lastFilter = "";
   let disposed = false;
   const snapshots = $derived(overview?.snapshots ?? []);
-  const stats = $derived(overview?.stats);
+  const allStats = $derived(overview?.stats);
+  const stats = $derived(metrics?.stats);
   const displayModels = $derived(uniqueModelStats(stats?.modelStats ?? []));
   const modelOptions = $derived(
     [
       ...new Set(
-        (stats?.modelStats ?? [])
+        (allStats?.modelStats ?? [])
           .filter(
             (stat) => !filters.provider || stat.provider === filters.provider,
           )
@@ -84,7 +102,7 @@
   const effortOptions = $derived(
     [
       ...new Set(
-        (stats?.modelStats ?? []).map((stat) => stat.effort ?? "unknown"),
+        (allStats?.modelStats ?? []).map((stat) => stat.effort ?? "unknown"),
       ),
     ].sort(),
   );
@@ -160,6 +178,26 @@
     } finally {
       if (!disposed) loading = false;
     }
+  }
+  async function loadMetrics(range: MetricsRange, request: number) {
+    try {
+      const result = await api.metrics(range);
+      if (!disposed && request === metricsRequest) metrics = result;
+    } catch (reason) {
+      if (!disposed && request === metricsRequest) {
+        metricsError = failure(reason);
+        metrics = null;
+      }
+    } finally {
+      if (!disposed && request === metricsRequest) metricsLoading = false;
+    }
+  }
+  function exploreInterval() {
+    if (!metrics) return;
+    filters.from =
+      metrics.range.from == null ? "" : localDateTime(metrics.range.from);
+    filters.to = localDateTime(metrics.range.to - 1);
+    page = "history";
   }
   async function loadHistory() {
     if (dateError) return;
@@ -308,6 +346,43 @@
     window.scrollTo({ top: 0, left: 0 });
   });
   $effect(() => {
+    document.documentElement.style.setProperty(
+      "--font-scale",
+      String((settings?.fontScale ?? 120) / 100),
+    );
+  });
+  $effect(() => {
+    const selection = timePreset;
+    const from = customFrom;
+    const to = customTo;
+    const clock = metricsClock;
+    if (!ready || page !== "overview") return;
+    const request = ++metricsRequest;
+    metricsLoading = true;
+    metricsError = "";
+    metrics = null;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const range = resolveRange(selection, clock, from, to);
+      try {
+        localStorage.setItem(
+          "gcd-metrics-range",
+          JSON.stringify({ preset: selection, from, to }),
+        );
+      } catch {
+        /* Storage may be unavailable. */
+      }
+      timer = setTimeout(() => void loadMetrics(range, request), 180);
+    } catch (reason) {
+      metricsError = failure(reason);
+      metricsLoading = false;
+    }
+    return () => {
+      clearTimeout(timer);
+      ++metricsRequest;
+    };
+  });
+  $effect(() => {
     const theme = settings?.theme ?? "black";
     const system = window.matchMedia("(prefers-color-scheme: dark)");
     const apply = () => {
@@ -322,6 +397,18 @@
   });
   onMount(() => {
     disposed = false;
+    try {
+      const saved = JSON.parse(
+        localStorage.getItem("gcd-metrics-range") ?? "null",
+      );
+      if (saved && timePresets.some(([key]) => key === saved.preset)) {
+        timePreset = saved.preset;
+        if (typeof saved.from === "string") customFrom = saved.from;
+        if (typeof saved.to === "string") customTo = saved.to;
+      }
+    } catch {
+      /* Use the default interval. */
+    }
     ready = true;
     void loadOverview();
     const tick = setInterval(() => {
@@ -329,6 +416,7 @@
     }, 1000);
     const poll = setInterval(() => {
       if (native || preview) void loadOverview();
+      metricsClock = Math.floor(Date.now() / 1000);
     }, 30000);
     const cleanups: (() => void)[] = [];
     if (native) {
@@ -339,6 +427,8 @@
       ]) {
         void listen(event, () => {
           void loadOverview();
+          if (event === "history-updated")
+            metricsClock = Math.floor(Date.now() / 1000);
           if (page === "history" && event === "history-updated")
             void loadHistory();
           if (page === "recommendations") void loadAdvice();
@@ -370,8 +460,8 @@
           aria-current={page === item.id ? "page" : undefined}
           onclick={() => (page = item.id)}
           ><Icon name={item.id} /><span>{item.label}</span
-          >{#if item.id === "history" && stats?.promptCount}<span
-              class="nav-count">{count(stats.promptCount)}</span
+          >{#if item.id === "history" && allStats?.promptCount}<span
+              class="nav-count">{count(allStats.promptCount)}</span
             >{/if}</button
         >{/each}
     </nav>
@@ -510,68 +600,141 @@
         <div>
           <h2>Your work in numbers</h2>
           <p>
-            Imported history · all time · {stats?.computers.length ?? 0} computers
+            {timePresets.find(([key]) => key === timePreset)?.[1]} · {stats
+              ?.computers.length ?? 0} computers
           </p>
         </div>
-        <button class="text-button" onclick={() => (page = "history")}
+        <button
+          class="text-button"
+          disabled={!metrics || metricsLoading}
+          onclick={exploreInterval}
           >Explore history <Icon name="arrow" size={15} /></button
         >
       </section>
-      <div class="stats-grid">
+      <section class="interval-controls" aria-label="Statistics interval">
+        <label
+          >Time range<select
+            aria-label="Statistics time range"
+            bind:value={timePreset}
+          >
+            {#each timePresets as [value, label]}<option {value}>{label}</option
+              >{/each}
+          </select></label
+        >
+        {#if timePreset === "custom"}
+          <label
+            >Start<input
+              aria-label="Statistics start"
+              type="datetime-local"
+              step="1"
+              bind:value={customFrom}
+            /></label
+          >
+          <label
+            >End<input
+              aria-label="Statistics end"
+              type="datetime-local"
+              step="1"
+              bind:value={customTo}
+            /></label
+          >
+        {/if}
+        <span class="interval-status" role="status"
+          >{metricsLoading
+            ? "Updating statistics…"
+            : metricsError
+              ? ""
+              : metrics
+                ? rangeDescription(metrics.range)
+                : ""}</span
+        >
+      </section>
+      <p class="fineprint interval-note">
+        Local time · Weeks start Monday. Tokens and requests use their recorded
+        time; the end time is exclusive. Quota meters above always show the
+        latest allowance.
+      </p>
+      {#if metricsError}<p class="field-error" role="alert">
+          {metricsError}
+        </p>{/if}
+      <div class="stats-grid" aria-busy={metricsLoading}>
         <div class="stat-item">
-          <span>User prompts</span><strong
-            >{loading ? "—" : count(stats?.promptCount ?? 0)}</strong
+          <span>Prompts started</span><strong
+            >{metricsLoading || !stats
+              ? "—"
+              : count(stats?.promptCount ?? 0)}</strong
           ><small>{count(stats?.conversationCount ?? 0)} conversations</small>
         </div>
         <div class="stat-item">
           <span>Measured tokens</span><strong
-            >{loading ? "—" : count(stats?.totalTokens ?? 0)}</strong
+            >{metricsLoading || !stats
+              ? "—"
+              : count(stats?.totalTokens ?? 0)}</strong
           ><small>Includes input, caches, and output</small>
         </div>
         <div class="stat-item">
-          <span>Tokens per prompt</span><strong
-            >{loading ? "—" : count(stats?.medianTokens ?? 0)}</strong
-          ><small>Median · p75 {count(stats?.p75Tokens ?? 0)}</small>
+          <span>Tokens per active prompt</span><strong
+            >{metricsLoading || !stats || !metrics?.activePromptCount
+              ? "—"
+              : count(stats.medianTokens)}</strong
+          ><small
+            >Median · p75 {count(
+              metrics?.activePromptCount ? stats?.p75Tokens : null,
+            )}</small
+          >
         </div>
         <div class="stat-item">
           <span>Model requests</span><strong
-            >{loading ? "—" : count(stats?.requestCount ?? 0)}</strong
+            >{metricsLoading || !stats
+              ? "—"
+              : count(stats?.requestCount ?? 0)}</strong
           ><small
             >{count(stats?.backgroundRequests ?? 0)} background requests</small
           >
         </div>
       </div>
+      <p class="fineprint interval-note">
+        {count(metrics?.activePromptCount)} active user prompts, including work started
+        earlier. Per-prompt figures count only tokens recorded inside this interval.
+        Missing logs can leave incomplete totals.
+      </p>
       <div class="charts-grid">
         <section class="panel">
           <div class="panel-heading">
-            <h2>Daily activity</h2>
+            <h2>Activity over time</h2>
             <span class="subtle">Measured tokens</span>
           </div>
-          <DailyChart daily={stats?.daily ?? []} />
+          <DailyChart
+            activity={metrics?.activity ?? []}
+            bucketSeconds={metrics?.bucketSeconds ?? 3600}
+          />
         </section>
         <section class="panel">
           <div class="panel-heading">
             <h2>Where tokens go</h2>
-            <span class="subtle">All imported history</span>
+            <span class="subtle">Selected interval</span>
           </div>
           <TokenChart tokens={stats?.tokenTotals ?? emptyTokens()} />
         </section>
       </div>
       {#if stats?.modelStats.length}<section class="panel model-panel">
           <div class="panel-heading">
-            <h2>Models in your workflow</h2>
+            <h2>Models and reasoning</h2>
             <span class="subtle">Measured consumption, not model quality</span>
           </div>
           <div class="table-scroll">
             <table>
               <thead
                 ><tr
-                  ><th>Model</th><th>Effort</th><th class="numeric">Prompts</th
-                  ><th class="numeric">Tokens</th><th class="numeric">Median</th
-                  ><th class="numeric">p75</th></tr
+                  ><th>Model</th><th>Reasoning</th><th class="numeric"
+                    >Active prompts</th
+                  ><th class="numeric">Requests</th><th class="numeric"
+                    >Tokens</th
+                  ><th class="numeric">Median</th><th class="numeric">p75</th
+                  ></tr
                 ></thead
               ><tbody
-                >{#each displayModels.slice(0, 8) as model}<tr
+                >{#each displayModels as model}<tr
                     ><td
                       ><span class={`provider-dot ${model.provider}`}
                       ></span>{model.model}</td
@@ -580,20 +743,25 @@
                         >{model.effort ?? "unknown"}</span
                       ></td
                     ><td class="numeric">{count(model.promptCount)}</td><td
-                      class="numeric">{count(model.totalTokens)}</td
-                    ><td class="numeric">{count(model.medianTokens)}</td><td
-                      class="numeric">{count(model.p75Tokens)}</td
+                      class="numeric">{count(model.requestCount)}</td
+                    ><td class="numeric">{count(model.totalTokens)}</td><td
+                      class="numeric"
+                      >{count(
+                        model.promptCount ? model.medianTokens : null,
+                      )}</td
+                    ><td class="numeric"
+                      >{count(model.promptCount ? model.p75Tokens : null)}</td
                     ></tr
                   >{/each}</tbody
               >
             </table>
           </div>
         </section>{/if}
-      {#if stats?.quotaAllocations?.length}
+      {#if allStats?.quotaAllocations?.length}
         <section class="panel model-panel" aria-label="Quota accounting">
           <div class="panel-heading">
             <h2>Quota accounting</h2>
-            <span class="subtle">Changes between saved readings</span>
+            <span class="subtle">All saved readings · all time</span>
           </div>
           <p class="fineprint">
             Percentage-point changes across recorded windows. Prompt attribution
@@ -612,7 +780,7 @@
                 ></thead
               >
               <tbody
-                >{#each stats.quotaAllocations as allocation}<tr>
+                >{#each allStats.quotaAllocations as allocation}<tr>
                     <td
                       >{providerName(allocation.provider)}
                       <span class="subtle"
@@ -710,19 +878,21 @@
         ><label
           >Computer<select bind:value={filters.deviceId}
             ><option value="">All computers</option
-            >{#each stats?.computers ?? [] as device}<option value={device}
+            >{#each allStats?.computers ?? [] as device}<option value={device}
                 >{machineName(device)}</option
               >{/each}</select
           ></label
         ><label
           >From<input
-            type="date"
+            type="datetime-local"
+            step="1"
             bind:value={filters.from}
             max={filters.to || undefined}
           /></label
         ><label
           >To<input
-            type="date"
+            type="datetime-local"
+            step="1"
             bind:value={filters.to}
             min={filters.from || undefined}
           /></label
@@ -885,9 +1055,10 @@
           <TokenChart tokens={pageTokenTotals} />
         </section>{/if}
       <p class="fineprint history-footnote">
-        Only 160 characters of each prompt are stored. Tokens are measured from
-        local logs. Quota impact is an estimate; browser conversations are
-        outside this history.
+        Date filters select when prompts started; rows show each prompt’s
+        complete recorded usage. Only 160 characters of each prompt are stored.
+        Tokens are measured from local logs. Quota impact is an estimate;
+        browser conversations are outside this history.
       </p>
     {:else if page === "recommendations"}
       <div class="task-selector" role="group" aria-label="Choose your task">
@@ -1032,21 +1203,38 @@
                 >
               </select></label
             >
+            <label class="form-field font-control"
+              >Font size · {settings.fontScale}%
+              <input
+                aria-label="Font size"
+                type="range"
+                min="90"
+                max="160"
+                step="10"
+                bind:value={settings.fontScale}
+                oninput={() => (dirty = true)}
+              />
+              <span class="fineprint"
+                >90%–160% · Default 120%. Preview changes here, then save to
+                update the strip.</span
+              >
+            </label>
             {#if isWindows}<label class="toggle-row"
                 ><span
-                  ><strong>Anchor to taskbar</strong><small
-                    >Lock the strip against the taskbar edge. Turn off to drag
-                    it freely.</small
+                  ><strong>Lock strip position</strong><small
+                    >Prevent accidental movement. Off by default; drag the grip
+                    at the left end to move the strip.</small
                   ></span
                 ><input
                   type="checkbox"
-                  bind:checked={settings.anchorToTaskbar}
+                  bind:checked={settings.stripLocked}
                   onchange={() => (dirty = true)}
                 /><span class="switch" aria-hidden="true"></span></label
               >{/if}
             <p class="fineprint">
               Theme applies to the dashboard and Windows strip. macOS menu-bar
-              colors follow the system.
+              colors and text size follow the system. The Windows strip is a
+              freely movable window; it does not become part of the taskbar.
             </p>
           </section>
           <section class="panel settings-panel">
