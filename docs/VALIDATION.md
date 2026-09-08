@@ -1,10 +1,10 @@
 # Validation
 
-## 0.1.3 security update
+## 0.1.4 security update
 
 Security regression coverage includes spreadsheet export escaping, absolute executable discovery, bounded reads, shared-record account boundaries, stable record timestamps, migration of earlier records, numeric validation, and dashboard navigation restrictions.
 
-The local security update passed 61 Rust tests, 12 frontend tests, and Svelte/TypeScript checks. Native Windows checks verified dashboard command restrictions, blocked external document replacement and popups, and interval totals against independent database queries. The Windows installer built successfully. Four architecture builds run in the release workflow.
+The local security update passed 62 Rust tests, 12 frontend tests, and Svelte/TypeScript checks. Native Windows checks verified dashboard command restrictions, blocked external document replacement and popups, and interval totals against independent database queries. The Windows installer built successfully. Four architecture builds run in the release workflow.
 
 ## Earlier releases
 

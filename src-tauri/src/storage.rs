@@ -388,7 +388,9 @@ impl Store {
             )),
             "p.preview LIKE ? ESCAPE '\\'"
         );
-        let mut request_terms = vec!["r.prompt_id=p.id".to_string()];
+        let mut request_terms = vec![
+            "r.prompt_id=p.id AND r.provider=p.provider AND r.account_id=p.account_id".to_string(),
+        ];
         if let Some(model) = &filter.model {
             request_terms.push("r.model=?".into());
             args.push(model.clone().into());
@@ -422,8 +424,8 @@ impl Store {
         let mut items = Vec::with_capacity(prompts.len());
         for prompt in prompts {
             let requests = self.query_json::<RequestUsage, _>(
-                "SELECT data FROM requests WHERE prompt_id=?1 ORDER BY timestamp",
-                [&prompt.id],
+                "SELECT data FROM requests WHERE prompt_id=?1 AND provider=?2 AND account_id=?3 ORDER BY timestamp",
+                params![prompt.id, prompt.provider.key(), prompt.account_id],
             )?;
             let mut tokens = TokenUsage::default();
             for r in &requests {
@@ -483,7 +485,7 @@ impl Store {
         {
             return Ok(vec![]);
         }
-        let outside:i64=self.connection.query_row("SELECT COUNT(*) FROM requests WHERE prompt_id=?1 AND (timestamp<=?2 OR timestamp>?3)",params![prompt.id,first.fetched_at,last.fetched_at],|r|r.get(0)).map_err(|e|e.to_string())?;
+        let outside:i64=self.connection.query_row("SELECT COUNT(*) FROM requests WHERE prompt_id=?1 AND (timestamp<=?2 OR timestamp>?3) AND provider=?4 AND account_id=?5",params![prompt.id,first.fetched_at,last.fetched_at,prompt.provider.key(),prompt.account_id],|r|r.get(0)).map_err(|e|e.to_string())?;
         // Earlier prompts still in progress can consume allowance even before their next request record arrives.
         let competing:i64=self.connection.query_row("SELECT COUNT(*) FROM prompts WHERE provider=?1 AND account_id=?2 AND id!=?3 AND timestamp<=?5 AND (json_extract(data,'$.completedAt') IS NULL OR json_extract(data,'$.completedAt')>?4)",params![prompt.provider.key(),prompt.account_id,prompt.id,first.fetched_at,last.fetched_at],|r|r.get(0)).map_err(|e|e.to_string())?;
         if outside > 0 || competing > 0 {
@@ -565,8 +567,13 @@ impl Store {
             )
             .map_err(|e| e.to_string())?;
         for row in rows {
-            let r: RequestUsage = serde_json::from_str(&row.map_err(|e| e.to_string())?)
+            let mut r: RequestUsage = serde_json::from_str(&row.map_err(|e| e.to_string())?)
                 .map_err(|e| e.to_string())?;
+            r.prompt_id = r.prompt_id.filter(|id| {
+                users
+                    .get(id)
+                    .is_some_and(|p| p.provider == r.provider && p.account_id == r.account_id)
+            });
             result.request_count += 1;
             result.token_totals.add(&r.tokens);
             devices.insert(r.device_id.clone());
@@ -1146,6 +1153,43 @@ pub(crate) mod tests {
             .total,
             0
         );
+    }
+    #[test]
+    fn security_direct_prompt_references_never_cross_account_or_provider() {
+        for different_provider in [false, true] {
+            for prompt_first in [false, true] {
+                let mut store = Store::open(Path::new(":memory:")).unwrap();
+                let mut r = request();
+                if different_provider {
+                    r.provider = Provider::Claude;
+                } else {
+                    r.account_id = "other".into();
+                }
+                if prompt_first {
+                    store.save_prompt(&prompt()).unwrap();
+                }
+                store.save_request(&r).unwrap();
+                if !prompt_first {
+                    store.save_prompt(&prompt()).unwrap();
+                }
+                let history = store.history(&HistoryFilter::default()).unwrap();
+                assert!(history.items[0].requests.is_empty());
+                assert_eq!(
+                    store
+                        .history(&HistoryFilter {
+                            model: Some("gpt".into()),
+                            ..Default::default()
+                        })
+                        .unwrap()
+                        .total,
+                    0
+                );
+                let stats = store.stats(None, None).unwrap();
+                assert_eq!(stats.background_requests, 1);
+                assert_eq!(stats.median_tokens, 0);
+                assert_eq!(stats.model_stats[0].prompt_count, 0);
+            }
+        }
     }
     #[test]
     fn security_migration_repairs_legacy_json_without_changing_usage() {
