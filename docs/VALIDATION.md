@@ -8,8 +8,11 @@
 - Existing 0.1.1 settings migrate to an unlocked strip at 120% text size while preserving theme, percentage mode, device identity, and saved position. Lock position is a separate optional setting; it does not snap to the taskbar. Native fonts, strip size, margins, and drag grip share the same DPI and text scale.
 - After explicit dashboard close, its browser child processes exited. The isolated background app measured 34.9 MiB working set and 11.8 MiB private memory, with no children. Provider helpers and imports remain temporary costs.
 - Repeat the native interval checks with `scripts/interval-smoke.cjs`; repeat theme, percentage, and position-lock checks with `scripts/display-smoke.cjs`. Use the private isolated test environment described below.
-- Windows installation and release builds are recorded after packaging. Physical dragging across mixed-DPI monitors and interactive macOS menu-bar checks remain target-device checks.
+- The 2.59 MB Windows x64 installer upgraded the normal per-user installation to 0.1.2. Installed-app checks passed for all five themes, both percentage modes, both position-lock settings, and preference persistence. The normal app was reopened without debugging/test overrides; both providers returned fresh connected readings. Device identity, login startup preference, sync folder, connection paths, history, and unrelated display preferences were retained.
+- All four dashboard pages fit the minimum 760-pixel window width at 160% text size. Physical dragging across mixed-DPI monitors and interactive macOS menu-bar checks remain target-device checks.
 
+
+- All four architectures passed the required tests and package builds in [the 0.1.2 release workflow](https://github.com/eshin087/gcdUsage/actions/runs/34172380827); both Mac packages passed background launch. The [private release](https://github.com/eshin087/gcdUsage/releases/tag/v0.1.2) contains four installers and SHA-256 checksums. Uploaded asset sizes and digests were verified: Windows x64 2.59 MB, Windows ARM64 2.31 MB, macOS Intel 3.43 MB, and macOS Apple Silicon 3.14 MB.
 
 ## v0.1.1 display update
 
