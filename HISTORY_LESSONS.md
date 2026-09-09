@@ -36,3 +36,5 @@ Windows taskbar embedding was not adopted. The supported display is a movable na
 9. Dependency audits need target-aware triage. Linux-only advisories are not Windows/macOS shipping code; unmaintained dependencies still deserve disclosure and upstream tracking.
 
 This file records project-specific preferences and lessons, not private conversation transcripts or machine identifiers.
+
+10. Internal browser context wrappers can carry attributes and precede actual user text. Strip recognized leading context blocks before truncation, retain context-only records as background activity, and key preview repair by timestamp as well as preview so repeated headers cannot mix prompts.

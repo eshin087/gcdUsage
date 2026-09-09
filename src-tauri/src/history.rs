@@ -261,7 +261,7 @@ fn timestamp(value: &Value) -> i64 {
         })
         .unwrap_or(0)
 }
-fn event_time(v: &Value) -> i64 {
+pub(crate) fn event_time(v: &Value) -> i64 {
     timestamp(&v["timestamp"])
 }
 pub(crate) fn content_text(value: &Value) -> String {
@@ -280,19 +280,7 @@ pub(crate) fn content_text(value: &Value) -> String {
         .unwrap_or_default()
 }
 pub(crate) fn is_context_only(s: &str) -> bool {
-    let s = s.trim_start();
-    [
-        "<environment_context>",
-        "<permissions instructions>",
-        "<app-context>",
-        "<system-reminder>",
-        "<local-command-caveat>",
-        "<command-name>",
-        "<local-command-stdout>",
-        "<task-notification>",
-    ]
-    .iter()
-    .any(|prefix| s.starts_with(prefix))
+    crate::presentation::user_text(s).trim().is_empty()
 }
 fn classify(value: &Value) -> ActivityKind {
     let source = value.to_string().to_ascii_lowercase();

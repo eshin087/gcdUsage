@@ -13,6 +13,7 @@ impl Store {
         identity: &str,
     ) -> Result<(), String> {
         let key = path.to_string_lossy();
+        let identity = format!("context-v2:{identity}");
         let done: bool = self
             .connection
             .query_row(
@@ -86,17 +87,31 @@ impl Store {
             } else {
                 None
             };
-            if let Some(body) =
-                body.filter(|s| !s.is_empty() && !crate::history::is_context_only(s))
-            {
+            if let Some(body) = body.filter(|s| !s.is_empty()) {
                 let cleaned = crate::presentation::clean_preview(&body);
-                if title.is_none() {
+                let context_only = crate::history::is_context_only(&body);
+                if title.is_none() && !context_only {
                     title = Some(crate::presentation::plain(&cleaned, 120))
                 }
                 if previews.len() < 20000 {
                     let prefix = body.chars().take(160).collect::<String>();
-                    previews.insert(prefix.clone(), cleaned.clone());
-                    previews.insert(crate::presentation::clean_preview(&prefix), cleaned);
+                    for prefix in [
+                        prefix.clone(),
+                        crate::presentation::plain(&body, 160),
+                        crate::presentation::clean_preview(&prefix),
+                        cleaned.clone(),
+                    ] {
+                        let key = (crate::history::event_time(&v), prefix);
+                        let value = (cleaned.clone(), context_only);
+                        previews
+                            .entry(key)
+                            .and_modify(|old: &mut Option<(String, bool)>| {
+                                if old.as_ref() != Some(&value) {
+                                    *old = None;
+                                }
+                            })
+                            .or_insert(Some(value));
+                    }
                 }
             }
         }
@@ -110,10 +125,16 @@ impl Store {
                 for mut p in rows {
                     p.project = project.clone().or(p.project);
                     p.chat_title = title.clone().or(p.chat_title);
-                    p.preview = previews
-                        .get(&p.preview)
-                        .cloned()
-                        .unwrap_or_else(|| crate::presentation::clean_preview(&p.preview));
+                    if let Some(Some((cleaned, context_only))) =
+                        previews.get(&(p.timestamp, p.preview.clone()))
+                    {
+                        p.preview = cleaned.clone();
+                        if *context_only {
+                            p.kind = ActivityKind::Background;
+                        }
+                    } else {
+                        p.preview = crate::presentation::clean_preview(&p.preview);
+                    }
                     self.save_prompt(&p)?;
                 }
             }
@@ -133,6 +154,55 @@ impl Store {
 mod tests {
     use super::*;
     #[test]
+    fn browser_context_repair_separates_repeated_headers_and_retains_records() {
+        let mut store = Store::open(Path::new(":memory:")).unwrap();
+        let header = format!(
+            "<in-app-browser-context source=\"ambient-ui-state\">{}</in-app-browser-context>",
+            "internal markup \n".repeat(30)
+        );
+        let mut events = vec![
+            serde_json::json!({"type":"session_meta","payload":{"id":"context-session","cwd":"/synthetic/Project"}}),
+        ];
+        for (i, body) in [
+            format!("{header}First real prompt"),
+            format!("{header}Second real prompt"),
+            header.clone(),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let mut p = super::super::tests::prompt();
+            p.id = format!("context-{i}");
+            p.provider = Provider::Codex;
+            p.session_id = "context-session".into();
+            p.timestamp = 100 + i as i64;
+            p.preview = crate::presentation::plain(&body, 160);
+            store.save_prompt(&p).unwrap();
+            events.push(serde_json::json!({"type":"event_msg","timestamp":p.timestamp,"payload":{"type":"user_message","message":body}}));
+        }
+        let file = std::env::temp_dir().join(format!("gcd-context-{}.jsonl", uuid::Uuid::new_v4()));
+        std::fs::write(
+            &file,
+            events.iter().map(|v| format!("{v}\n")).collect::<String>(),
+        )
+        .unwrap();
+        store.enrich_file(&file, Provider::Codex, "source").unwrap();
+        assert_eq!(
+            store.prompt("context-0").unwrap().unwrap().preview,
+            "First real prompt"
+        );
+        assert_eq!(
+            store.prompt("context-1").unwrap().unwrap().preview,
+            "Second real prompt"
+        );
+        assert_eq!(
+            store.prompt("context-2").unwrap().unwrap().kind,
+            ActivityKind::Background
+        );
+        assert_eq!(store.history(&HistoryFilter::default()).unwrap().total, 2);
+        std::fs::remove_file(file).unwrap();
+    }
+    #[test]
     fn enrichment_recovers_wrapped_answer_without_replaying_usage() {
         let mut store = Store::open(Path::new(":memory:")).unwrap();
         let mut p = super::super::tests::prompt();
@@ -145,7 +215,7 @@ mod tests {
         let content = format!(
             "{}\n{}\n",
             serde_json::json!({"type":"session_meta","payload":{"id":"session-enrich","cwd":"C:/private/ExampleProject","title":"Example chat"}}),
-            serde_json::json!({"type":"event_msg","payload":{"type":"user_message","message":raw}})
+            serde_json::json!({"type":"event_msg","timestamp":p.timestamp,"payload":{"type":"user_message","message":raw}})
         );
         std::fs::write(&file, content).unwrap();
         store

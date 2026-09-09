@@ -1,6 +1,44 @@
 //! Bounded, plain-text presentation of recorded content. Never interpret markup.
+/// Remove only leading, recognized app-injected context blocks. User-authored
+/// code and markup elsewhere remain text. Attributes on these wrappers are valid.
+pub fn user_text(mut text: &str) -> &str {
+    loop {
+        text = text.trim_start();
+        let Some(tag) = [
+            "in-app-browser-context",
+            "recommended_plugins",
+            "codex_internal_context",
+            "environment_context",
+            "permissions instructions",
+            "app-context",
+            "system-reminder",
+            "local-command-caveat",
+            "command-name",
+            "local-command-stdout",
+            "task-notification",
+        ]
+        .into_iter()
+        .find(|tag| {
+            text.strip_prefix(&format!("<{tag}"))
+                .is_some_and(|rest| rest.starts_with('>') || rest.starts_with(char::is_whitespace))
+        }) else {
+            return text;
+        };
+        let close = format!("</{tag}>");
+        let Some(end) = text.find(&close) else {
+            return "";
+        };
+        text = &text[end + close.len()..];
+    }
+}
 pub fn clean_preview(raw: &str) -> String {
-    let mut text = raw.trim();
+    let mut text = user_text(raw).trim();
+    if text.starts_with("<create-pr-command>") {
+        return "Create a pull request".into();
+    }
+    if text.is_empty() && !raw.trim().is_empty() {
+        return "App context update (no captured user text)".into();
+    }
     if let Some(rest) = text.strip_prefix("<send_user_message_question_reply>") {
         let body = rest
             .split("</send_user_message_question_reply>")
@@ -54,6 +92,23 @@ pub fn project_name(raw: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn hides_browser_context_attributes_but_preserves_actual_user_code() {
+        assert_eq!(clean_preview("<in-app-browser-context source=\"ambient-ui-state\"><div>internal source</div></in-app-browser-context>Fix the toolbar"), "Fix the toolbar");
+        assert_eq!(clean_preview("<recommended_plugins>internal list</recommended_plugins>\n<in-app-browser-context source=\"x\">internal</in-app-browser-context>Keep <div> in my code"), "Keep <div> in my code");
+        assert!(user_text(
+            "<codex_internal_context source=\"goal\">internal</codex_internal_context>"
+        )
+        .is_empty());
+        assert!(
+            !clean_preview("<in-app-browser-context source=\"ambient-ui-state\">truncated")
+                .contains('<')
+        );
+        assert_eq!(
+            clean_preview("Explain <in-app-browser-context> in this example"),
+            "Explain <in-app-browser-context> in this example"
+        );
+    }
     #[test]
     fn extracts_answers_and_preserves_user_code() {
         assert_eq!(clean_preview("<send_user_message_question_reply>[{\"answer\":\"Last hour\"}]</send_user_message_question_reply>"),"Reply: Last hour");

@@ -21,7 +21,7 @@ def header(number,label,title,subtitle):
  c.setFillColor(HexColor('#f7f9fd'));c.rect(0,0,W,H,fill=1,stroke=0)
  c.drawImage(str(ROOT/'src-tauri/icons/128x128.png'),48,718,42,42,mask='auto')
  c.setFillColor(ink);c.setFont('Helvetica-Bold',11);c.drawString(102,742,'GCD USAGE')
- c.setFillColor(muted);c.setFont('Helvetica',9);c.drawRightString(564,742,'QUICK MANUAL  /  v0.4.0')
+ c.setFillColor(muted);c.setFont('Helvetica',9);c.drawRightString(564,742,'QUICK MANUAL  /  v0.4.1')
  c.setStrokeColor(HexColor('#dbe3ef'));c.line(48,700,564,700)
  c.setFillColor(cyan);c.setFont('Helvetica-Bold',9);c.drawString(48,674,label.upper())
  c.setFillColor(ink);c.setFont('Helvetica-Bold',27);c.drawString(48,634,title)
