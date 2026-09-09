@@ -13,7 +13,7 @@ GCD Usage is a per-user Windows/macOS desktop companion for provider allowance m
 - `history.rs`, `enrichment.rs`, `presentation.rs`: streaming import, optional context enrichment, plain-text cleanup. Enrichment must not replay token usage or reassign accounts.
 - `storage.rs`, `metrics.rs`, `dock_storage.rs`, `details.rs`: persistence and aggregation. Keep measured tokens separate from quota estimates.
 - `sync.rs`: immutable event batches and device receipts. Local database files and credentials never sync.
-- `navigation.rs`: only validated, reconstructed browser-conversation links; coding logs use a details fallback when no verified route exists.
+- `navigation.rs`: validated legacy conversation links and one fixed Pro documentation destination; coding logs use captured details.
 - `platform/`: native display, geometry, pointer state and duration UI.
 - `public/gcd-logo.png` is the generated monochrome lowercase GCD mark. `scripts/create-icons.mjs` generates all packaged icons and raw tray pixels from it.
 

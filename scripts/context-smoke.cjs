@@ -17,6 +17,6 @@ const {chromium}=require(process.env.GCD_PLAYWRIGHT_MODULE||'playwright');
  assert.ok(await page.evaluate(()=>parseFloat(getComputedStyle(document.documentElement).fontSize)>=18));
  await assert.rejects(()=>invoke('get_browser_history',{filter:{}}));await assert.rejects(()=>invoke('import_browser_history',{accountLabel:'Test'}));
  assert.equal(await page.getByRole('button',{name:'Browser chats'}).count(),0);
- await page.locator('nav').getByRole('button',{name:'Overview',exact:true}).click();assert.equal(await page.getByLabel('Remaining requests unavailable').textContent(),'—');
+ await page.locator('nav').getByRole('button',{name:'Overview',exact:true}).click();assert.equal(await page.getByLabel('Remaining requests unavailable').textContent(),'\u2014');
  assert.deepEqual(errors,[]);const report={prompts:history.total,contextLabels:true,wrapperCleanup:true,detailNavigation:true,untrustedLinksRejected:true,defaultFont:18,retiredBrowserCommandsDenied:true,proRemainingUnknown:true,errors};await fs.writeFile('.local-test/v04/context-report.json',JSON.stringify(report,null,2));console.log(JSON.stringify(report));
 }finally{await browser.close()}})().catch(e=>{console.error(e);process.exitCode=1});

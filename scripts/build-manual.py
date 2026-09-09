@@ -19,6 +19,7 @@ def text(txt,x,y,width=508,style=body):
  p=Paragraph(txt,style);_,height=p.wrap(width,700);p.drawOn(c,x,y-height);return y-height-12
 def header(number,label,title,subtitle):
  c.setFillColor(HexColor('#f7f9fd'));c.rect(0,0,W,H,fill=1,stroke=0)
+ c.setFillColor(HexColor('#000000'));c.roundRect(48,718,42,42,3,fill=1,stroke=0)
  c.drawImage(str(ROOT/'src-tauri/icons/128x128.png'),48,718,42,42,mask='auto')
  c.setFillColor(ink);c.setFont('Helvetica-Bold',11);c.drawString(102,742,'GCD USAGE')
  c.setFillColor(muted);c.setFont('Helvetica',9);c.drawRightString(564,742,'QUICK MANUAL  /  v0.5.0')

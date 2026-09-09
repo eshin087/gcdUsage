@@ -1,5 +1,18 @@
 # Validation
 
+## Current release: 0.5.0
+
+The Windows installer is approximately 2.8 MiB and its executable 6.6 MiB. With the dashboard closed, this host measured 35.6-37.0 MiB working set and about 0.04% of total host CPU over a 59-second sample. Helper/import peaks are separate; this is one machine and interval, not a universal guarantee.
+
+[Four-platform CI](https://github.com/eshin087/gcdUsage/actions/runs/34321479246) passed: 81 Rust tests on each Windows architecture, 80 on each macOS architecture, 13 frontend tests and Svelte/TypeScript checks. Both macOS background-launch checks passed. Packages use the CI-built binaries; no personal compiler path was found in the Windows executable.
+
+The installed Windows package passed synthetic native checks with 36 prompts: context cleanup, captured details, unavailable browser Pro balances and rejection of retired browser commands. Dock totals matched independent SQLite sums across seven durations; invalid inputs and preview persistence passed. Dashboard command restrictions, external-document isolation and popup rejection passed. No JavaScript errors were observed.
+
+The compact UI was visually reviewed. Layout checks passed at 760, 900, 1000, 1100 and 1280 pixels, with 160% text and alternate themes. The six-page manual was rendered and visually checked on all pages. Post-upgrade database integrity passed, aggregate history counts were preserved, and both provider connections were healthy.
+
+The quota regression covers a poll during an active prompt followed by a post-completion reading, while retaining overlap rejection. Browser Pro caps are dated documentation references, not a verified remaining account balance. Manual import UI, parser and commands are removed; legacy stored records are retained and excluded from dock history. Physical mixed-DPI behavior and interactive macOS use still require device checks.
+
+
 Version 0.4.1 addresses the user-reported browser-context leak. Leading recognized context blocks with attributes are removed before preview extraction; context-only historical records are retained as background activity. Timestamp-scoped enrichment prevents repeated headers from mixing distinct prompts. All 82 Rust tests pass, including repeated-prefix repair and preservation of ordinary user code.
 
 
@@ -37,7 +50,3 @@ All four platform jobs passed for version 0.2.0. The [preview release](https://g
 Browser-import counts describe exported messages. Exact historical token consumption, hidden reasoning, and original-device attribution are not inferred. Shared-folder receipts describe what each device reported receiving.
 
 Performance depends on history size and temporary import or provider helpers. Packages are personal previews without trusted publisher signing.
-
-## 0.5.0 validation in progress
-
-Svelte/TypeScript and all 13 frontend tests pass. Synthetic preview checks cover the terminal layout at 900, 1000 and 1280 pixels, single-line prompt rows, removal of browser navigation and explicitly unavailable browser Pro balances. Platform Rust tests, installers and native checks are pending. The quota regression exercises a reading during a prompt followed by a valid post-completion reading, plus overlap rejection. Retired browser records remain stored but must not appear in dock history.

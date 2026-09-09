@@ -1,4 +1,4 @@
-# Security and performance review - 0.4.1
+# Security and performance review - 0.5.0
 
 Reviewed provider response handling and helper execution, dashboard command permissions/navigation, history and export processing, synchronization, native drawing and new conversation links. Checks cover current source and dependency versions; this is not a guarantee that every vulnerability has been found.
 
@@ -27,6 +27,8 @@ Record native smoke-test results, platform builds, memory/CPU measurements and i
 
 Release packages are built on isolated CI runners. Stripping debug symbols does not necessarily remove compiler source paths from local binaries; locally built installers are kept out of public release uploads.
 
-## 0.5.0 changes under validation
+## 0.5.0 validation
 
 The manual browser import UI, export parser and dashboard IPC commands are removed. Legacy record validation and storage remain for retention and versioned sync compatibility. The documentation opener takes no destination argument and opens one fixed HTTPS source. Browser Pro caps are dated reference data; no browser credentials, scraping or inferred account counters were introduced. Static terminal styling adds no animation loop or remote font. Quota attribution now selects a post-completion reading and retains conservative window/overlap checks. Existing dependency caveats above remain applicable.
+
+The final native package passed command-denial, retired-import rejection, external-document isolation and popup tests with synthetic data. Both full and production npm audits reported zero known advisories. Rust dependency versions are unchanged from the reviewed baseline; the existing upstream caveats remain. Sanitized source and generated package checks found no local-profile paths or credential patterns. These checks do not prove the absence of all vulnerabilities.
