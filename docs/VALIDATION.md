@@ -2,6 +2,11 @@
 
 Version 0.4.1 addresses the user-reported browser-context leak. Leading recognized context blocks with attributes are removed before preview extraction; context-only historical records are retained as background activity. Timestamp-scoped enrichment prevents repeated headers from mixing distinct prompts. All 82 Rust tests pass, including repeated-prefix repair and preservation of ordinary user code.
 
+
+The 0.4.1 native checks passed with browser-context fixtures, and the user confirmed that the reported history issue was fixed. Windows x64/ARM64 and macOS Intel/Apple Silicon test and package-build steps passed; both Mac background-launch checks passed. The CI-built Windows x64 installer was installed and its local database integrity check passed. The release binary was checked for absence of this developer machine's profile path.
+
+The Windows installer is approximately 2.7 MB and its executable approximately 6.8 MB. Background observations with the dashboard closed were approximately 35–47 MB; helpers and initial history repair are separate peaks. Temporary local build tools, dependency folders and test fixtures were removed, then the installed app was checked again. Some older captured previews remain unavailable; actual user code is not removed just because it resembles markup.
+
 Version 0.4.0 adds the Fable scoped weekly allowance, contextual prompt details, direct native dock duration controls, a new GCD identity and a larger dashboard. Local checks pass 80 Rust tests, 13 frontend tests, and Svelte/TypeScript validation. The live Claude response was checked for the explicitly labeled Fable window; missing general limits are never substituted with that scoped allowance.
 
 Synthetic native tests cover 36 prompts across multiple projects, wrapper cleanup, captured-details navigation, rejected invalid identifiers, and the 18 px default dashboard font. History filters fit the default window without horizontal overflow. Actual native drawing tests cover five dock cards, ten-row context, unavailable values, privacy mode, restricted screen space and several font scales. Screenshots use synthetic data only.

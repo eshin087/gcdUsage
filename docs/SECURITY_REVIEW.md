@@ -1,4 +1,4 @@
-# Security and performance review - 0.4.0
+# Security and performance review - 0.4.1
 
 Reviewed provider response handling and helper execution, dashboard command permissions/navigation, history and export processing, synchronization, native drawing and new conversation links. Checks cover current source and dependency versions; this is not a guarantee that every vulnerability has been found.
 
@@ -24,3 +24,5 @@ References: [OSV](https://osv.dev/), [GLib advisory](https://osv.dev/vulnerabili
 Shared-folder sync relies on trusted writers and the storage service's access controls; it is not authenticated, end-to-end-encrypted cloud sync. Previews and context labels can contain sensitive information. Local privileged malware is outside the app's protection boundary. Provider-private interfaces, optional upstream libraries, export formats, OS webviews and unsigned personal builds remain dependencies or limitations.
 
 Record native smoke-test results, platform builds, memory/CPU measurements and interactive verification in `VALIDATION.md`. Measure helpers/imports separately from idle use. Public reports and test outputs must not contain credentials or private history.
+
+Release packages are built on isolated CI runners. Stripping debug symbols does not necessarily remove compiler source paths from local binaries; locally built installers are kept out of public release uploads.

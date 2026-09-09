@@ -44,3 +44,5 @@ Use the existing `gcdUsage` repository. Do not create a replacement repo or rewr
 Maintain the short manual at `output/pdf/GCD-Usage-Manual.pdf` using `scripts/build-manual.py`. Keep it at six pages or fewer, visually review all pages, and link it near the top of README. Keep security reports high-level and credential-free.
 
 After QA, preserve compact release artifacts and remove only verified generated workspace folders. Never delete real user data, original provider logs, or unrelated files. Check absolute cleanup targets. Document what was installed, measured, published and left unverified.
+
+Publish CI-built packages. Local binaries may retain personal compiler source paths even when debug symbols are stripped; do not upload locally built installers without checking that boundary.

@@ -35,6 +35,8 @@ Windows taskbar embedding was not adopted. The supported display is a movable na
 8. An authorization denial is not a reason to bypass a restriction. A previous duplicate-repository deletion was blocked despite confirmation; do not retry through a different mechanism.
 9. Dependency audits need target-aware triage. Linux-only advisories are not Windows/macOS shipping code; unmaintained dependencies still deserve disclosure and upstream tracking.
 
-This file records project-specific preferences and lessons, not private conversation transcripts or machine identifiers.
 
 10. Internal browser context wrappers can carry attributes and precede actual user text. Strip recognized leading context blocks before truncation, retain context-only records as background activity, and key preview repair by timestamp as well as preview so repeated headers cannot mix prompts.
+11. Publish CI-built installers. Symbol stripping does not remove every embedded compiler source path from local binaries.
+
+This file records project-specific preferences and lessons, not private conversation transcripts or machine identifiers.
