@@ -8,13 +8,13 @@ A lightweight desktop companion with usage meters, searchable prompt history, sh
 
 - **Windows 11:** a native rounded dock with colored usage cards. Drag anywhere on the dock to move it; click to open the dashboard. Hover a meter to see its last 10 recorded prompts above the dock. It does not modify the Windows taskbar.
 - **macOS:** compact menu-bar usage meters.
-- **Dashboard:** Overview, History, Browser chats, Model advice, and Settings. Closing the dashboard releases its browser while the native meters keep running.
+- **Dashboard:** Overview, History, Model advice, and Settings. Closing the dashboard releases its browser while the native meters keep running.
 
-The default is a black theme, percentage **left**, and 120% text size. Settings offers five themes, percentage used instead, and text sizes from 90% to 160%. Native macOS menu-bar appearance follows macOS. Stale readings are marked; unavailable readings show an em dash and missing reset times show N/A.
+The default is a black Matrix-style theme, percentage **left**, and 120% text size. Settings offers five themes, percentage used instead, and text sizes from 90% to 160%. Native macOS menu-bar appearance follows macOS. Stale readings are marked; unavailable readings show an em dash and missing reset times show N/A.
 
 The Windows activity card shows logged tokens and recent models for the last hour by default. Click it, or right-click the dock, to choose a preset or custom duration of 1–43,200 minutes. Claude also has a Fable weekly meter when its scoped allowance is available. All Claude meters share the latest Claude history.
 
-Hover cards show project/chat context, cleaned prompt previews, model/reasoning, time, status and lifetime logged tokens. Click a row to open a supported original browser conversation or captured details. Coding logs without a verified link retain conversation/turn identifiers. Totals cover local and synchronized activity; imported browser tokens remain unknown. You can hide hover previews in Settings. Hover cards scroll when the screen cannot fit all ten prompts.
+Hover cards show project/chat context, cleaned prompt previews, model/reasoning, time, status and lifetime logged tokens. Click a row to open captured details. Coding logs without a verified link retain conversation/turn identifiers. Totals cover local and synchronized coding-tool activity. You can hide hover previews in Settings. Hover cards scroll when the screen cannot fit all ten prompts.
 
 ## Install and set up
 
@@ -30,9 +30,15 @@ Choose last 30 minutes, 1 hour, 6 hours, 24 hours, 7 days, this week, 30 days, t
 
 Metrics include measured tokens, cache/input/output/reasoning breakdown, prompts, conversations, requests, median/p75 consumption, an activity chart, and model/reasoning breakdowns. History supports search, filters, and CSV export. Usage recorded during an interval can include ongoing prompts started earlier.
 
-Coding-tool history covers local Claude Code and Codex activity. The Browser chats page also imports available conversations from user-selected Claude and ChatGPT exports, without a browser extension. Repeated imports are deduplicated when the same account label is used. Browser imports retain short previews and available model metadata; exact token consumption and the originating computer remain unknown. These messages are displayed separately from measured coding-tool requests.
+Coding-tool history covers local Claude Code and Codex activity. The dashboard uses condensed, single-line prompt rows and compact allowance cards. Manual browser imports have been removed. Ordinary browser conversations and tokens are not collected, including activity on computers without an installed collector. Previously stored browser records are retained for compatibility and excluded from the dock.
 
-Missing historical fields remain unknown. Quota impact is explicitly estimated and may be unavailable when activity overlaps or readings are insufficient.
+### Browser ChatGPT Pro limits
+
+The dashboard includes a **Pro $200 reference**, checked September 8, 2026: GPT-6 Pro permits 200 messages per week; GPT-5.6 Sol Pro permits 170 per day; together they are limited to 200 per day. These are separate from Work/Codex usage. [OpenAI documentation](https://help.openai.com/en/articles/20001354-gpt-56-and-gpt-6-pro-in-chatgpt).
+
+A published cap does not reveal an account balance. **Remaining browser Pro requests are unavailable** because this app has no live browser Chat counter; local Codex logs cannot fill that gap. No manual counter or upload is required. Check ChatGPT for account availability and reset time; published limits may change.
+
+Missing historical fields remain unknown. Quota accounting measures drops in remaining allowance: 82% to 80% left is 2 percentage points consumed. Per-prompt impact is estimated only when suitable snapshots isolate a completed prompt. Overlapping or unseen activity stays unallocated; resets and collection gaps prevent reliable attribution.
 
 Model advice runs locally and never changes your model automatically. Personalized forecasts require sufficient completed history; sparse or stale data produces provisional guidance.
 

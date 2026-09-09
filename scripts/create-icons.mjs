@@ -4,7 +4,7 @@ import {mkdirSync,readFileSync,writeFileSync} from 'node:fs';
 import {createRequire} from 'node:module';
 const sharp=createRequire(import.meta.url)(process.env.GCD_SHARP_MODULE || 'sharp');
 const dir=new URL('../src-tauri/icons/',import.meta.url);mkdirSync(dir,{recursive:true});
-const svg=readFileSync(new URL('../public/logo.svg',import.meta.url));
+const svg=readFileSync(new URL('../public/gcd-logo.png',import.meta.url));
 const png=async size=>sharp(svg).resize(size,size).png().toBuffer();
 for(const size of [32,128,256])writeFileSync(new URL(`${size}x${size}.png`,dir),await png(size));
 writeFileSync(new URL('tray.rgba',dir),await sharp(svg).resize(32,32).ensureAlpha().raw().toBuffer());

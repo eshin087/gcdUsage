@@ -4,7 +4,7 @@ Read this file before changing the app. Read `HISTORY_LESSONS.md`, `docs/VALIDAT
 
 ## Product and architecture
 
-GCD Usage is a per-user Windows/macOS desktop companion for provider allowance meters, local coding-tool prompt/request history, explicit browser-export imports, optional shared-folder sync, and local model advice. It is not an automatic browser collector or a hosted cloud service.
+GCD Usage is a per-user Windows/macOS desktop companion for provider allowance meters, local coding-tool prompt/request history, optional shared-folder sync, and local model advice. It is not an automatic browser collector or a hosted cloud service.
 
 - Tauri 2 + Rust + SQLite own collection, validation, accounting and OS integration.
 - Svelte/TypeScript owns an on-demand dashboard. Destroy its webview on close.
@@ -15,7 +15,7 @@ GCD Usage is a per-user Windows/macOS desktop companion for provider allowance m
 - `sync.rs`: immutable event batches and device receipts. Local database files and credentials never sync.
 - `navigation.rs`: only validated, reconstructed browser-conversation links; coding logs use a details fallback when no verified route exists.
 - `platform/`: native display, geometry, pointer state and duration UI.
-- `public/logo.svg` is the original GCD mark. `scripts/create-icons.mjs` generates all packaged icons and raw tray pixels from it.
+- `public/gcd-logo.png` is the generated monochrome lowercase GCD mark. `scripts/create-icons.mjs` generates all packaged icons and raw tray pixels from it.
 
 ## Invariants
 
@@ -46,3 +46,7 @@ Maintain the short manual at `output/pdf/GCD-Usage-Manual.pdf` using `scripts/bu
 After QA, preserve compact release artifacts and remove only verified generated workspace folders. Never delete real user data, original provider logs, or unrelated files. Check absolute cleanup targets. Document what was installed, measured, published and left unverified.
 
 Publish CI-built packages. Local binaries may retain personal compiler source paths even when debug symbols are stripped; do not upload locally built installers without checking that boundary.
+
+## 0.5 product decisions
+
+Use static Matrix green/black terminal styling and condensed one-line dashboard history. Preserve alternate themes and the larger font setting. Browser imports are retired: no parser, UI or IPC command. Legacy record types/tables remain solely for retention and sync compatibility. Do not restore manual uploads. The Pro $200 browser panel lists dated public caps; remaining requests stay unavailable until a genuine account counter exists. Never infer browser allowance from Codex logs or substitute a cap for remaining balance.

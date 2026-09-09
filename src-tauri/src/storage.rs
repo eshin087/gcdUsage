@@ -567,7 +567,7 @@ impl Store {
         let Some(first) = before.first() else {
             return Ok(vec![]);
         };
-        let after: Vec<QuotaSnapshot> = self.query_json("SELECT data FROM snapshots WHERE provider=?1 AND account_id=?2 AND device_id=?3 AND timestamp>?4 AND timestamp<=?5 ORDER BY timestamp LIMIT 1", params![prompt.provider.key(),prompt.account_id,prompt.device_id,prompt.timestamp,first.fetched_at+300])?;
+        let after: Vec<QuotaSnapshot> = self.query_json("SELECT data FROM snapshots WHERE provider=?1 AND account_id=?2 AND device_id=?3 AND timestamp>=?4 AND timestamp<=?5 ORDER BY timestamp LIMIT 1", params![prompt.provider.key(),prompt.account_id,prompt.device_id,prompt.completed_at.unwrap_or(i64::MAX).max(prompt.timestamp.saturating_add(1)),first.fetched_at.saturating_add(300)])?;
         let Some(last) = after.first() else {
             return Ok(vec![]);
         };
@@ -1101,6 +1101,24 @@ pub(crate) mod tests {
         other.prompt_id = None;
         s.save_request(&other).unwrap();
         assert!(s.quota_estimate(&prompt()).unwrap().is_none());
+    }
+    #[test]
+    fn attribution_waits_for_completion_instead_of_stopping_at_an_early_snapshot() {
+        let mut s = Store::open(Path::new(":memory:")).unwrap();
+        let mut p = prompt();
+        p.completed_at = Some(220);
+        s.save_prompt(&p).unwrap();
+        s.save_request(&request()).unwrap();
+        s.save_snapshot(&snapshot("before", 100, 18., 1000)).unwrap();
+        s.save_snapshot(&snapshot("during", 140, 19., 1000)).unwrap();
+        assert!(s.quota_estimate(&p).unwrap().is_none());
+        s.save_snapshot(&snapshot("after", 240, 20., 1000)).unwrap();
+        assert_eq!(s.quota_estimate(&p).unwrap().unwrap().percent, 2.);
+        // A second, unattributed request still blocks prompt-level estimation.
+        let mut other = request(); other.id = "unobserved-parent".into();
+        other.prompt_id = None; other.timestamp = 200;
+        s.save_request(&other).unwrap();
+        assert!(s.quota_estimate(&p).unwrap().is_none());
     }
     #[test]
     fn excludes_reset_and_account_contamination() {

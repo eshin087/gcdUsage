@@ -10,8 +10,6 @@ import type {
   RecommendationSet,
   TaskClass,
   SignInProgress,
-  BrowserFilter,
-  BrowserPage,
 } from "./types";
 
 export const native = isTauri();
@@ -53,11 +51,4 @@ export const api = {
   signIns: () => call<SignInProgress[]>("get_signin_status"),
   signInInput: (provider: Provider, code: string | null) =>
     call<void>("signin_input", { provider, code }),
-  browserHistory: (filter: BrowserFilter) =>
-    call<BrowserPage>("get_browser_history", { filter }),
-  importBrowser: (accountLabel: string) =>
-    call<{ added: number; duplicates: number; skipped: number } | null>(
-      "import_browser_history",
-      { accountLabel },
-    ),
 };

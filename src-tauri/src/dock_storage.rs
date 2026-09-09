@@ -80,38 +80,7 @@ impl Store {
                     browser: false,
                 });
             }
-            let browser_provider = if provider == Provider::Codex {
-                "chatgpt"
-            } else {
-                "claude"
-            };
-            let browser:Vec<crate::browser_history::BrowserPrompt> = self.query_json("SELECT data FROM browser_prompts WHERE provider=?1 ORDER BY timestamp DESC,id LIMIT 10",params![browser_provider])?;
-            for p in browser {
-                prompts.push(DockPrompt {
-                    context: format!(
-                        "Browser / {}",
-                        p.chat_title
-                            .as_deref()
-                            .unwrap_or(&p.conversation_id.chars().take(8).collect::<String>())
-                    ),
-                    id: format!("browser:{}", p.id),
-                    provider: provider.key().into(),
-                    preview: crate::presentation::clean_preview(&p.preview),
-                    timestamp: p.timestamp,
-                    tokens: None,
-                    models: format!(
-                        "{} · {}",
-                        if p.models.is_empty() {
-                            "Unknown model".into()
-                        } else {
-                            p.models.join(" / ")
-                        },
-                        p.effort.as_deref().unwrap_or("unknown")
-                    ),
-                    status: "imported".into(),
-                    browser: true,
-                });
-            }
+
         }
         prompts.sort_by(|a, b| b.timestamp.cmp(&a.timestamp).then_with(|| a.id.cmp(&b.id)));
         // Keep enough records for each provider's last ten as well as combined last ten.
@@ -162,7 +131,7 @@ mod tests {
         assert_eq!(store.dock_summary(1, 200).unwrap().tokens, 0);
     }
     #[test]
-    fn dock_returns_ten_prompts_per_provider_and_preserves_browser_unknowns() {
+    fn dock_excludes_retired_browser_records_without_deleting_them() {
         let mut store = Store::open(Path::new(":memory:")).unwrap();
         for provider in ["claude", "chatgpt"] {
             for i in 0..14 {
@@ -187,11 +156,9 @@ mod tests {
             }
         }
         let s = store.dock_summary(60, 100).unwrap();
-        assert_eq!(s.prompts.len(), 20);
-        assert_eq!(s.recent(Some("claude")).len(), 10);
-        assert_eq!(s.recent(None).len(), 10);
-        assert!(s.prompts.iter().all(|p| p.tokens.is_none() && p.browser));
+        assert!(s.prompts.is_empty());
         assert_eq!(s.tokens, 0);
-        assert_eq!(s.prompts[0].timestamp, Some(13));
+        let retained: i64 = store.connection.query_row("SELECT count(*) FROM browser_prompts", [], |r| r.get(0)).unwrap();
+        assert_eq!(retained, 28);
     }
 }

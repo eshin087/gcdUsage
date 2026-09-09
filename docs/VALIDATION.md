@@ -37,3 +37,7 @@ All four platform jobs passed for version 0.2.0. The [preview release](https://g
 Browser-import counts describe exported messages. Exact historical token consumption, hidden reasoning, and original-device attribution are not inferred. Shared-folder receipts describe what each device reported receiving.
 
 Performance depends on history size and temporary import or provider helpers. Packages are personal previews without trusted publisher signing.
+
+## 0.5.0 validation in progress
+
+Svelte/TypeScript and all 13 frontend tests pass. Synthetic preview checks cover the terminal layout at 900, 1000 and 1280 pixels, single-line prompt rows, removal of browser navigation and explicitly unavailable browser Pro balances. Platform Rust tests, installers and native checks are pending. The quota regression exercises a reading during a prompt followed by a valid post-completion reading, plus overlap rejection. Retired browser records remain stored but must not appear in dock history.

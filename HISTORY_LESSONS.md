@@ -40,3 +40,7 @@ Windows taskbar embedding was not adopted. The supported display is a movable na
 11. Publish CI-built installers. Symbol stripping does not remove every embedded compiler source path from local binaries.
 
 This file records project-specific preferences and lessons, not private conversation transcripts or machine identifiers.
+
+## 0.5 preferences and boundaries
+
+The user prefers a single-color lowercase gcd identity generated with the image tool, Matrix-style static black/green surfaces, compact Overview cards and single-line history for skimming. The user confirmed Browser ChatGPT Pro on the $200 tier. Public caps are reference data, not observed request counts. Browser work cannot be counted from local Codex activity. Remove manual browser uploads; retain prior data without adding manual workflows. Remaining-quota deltas measure interval consumption; per-prompt attribution still requires isolated snapshots and stays explicitly estimated.

@@ -82,6 +82,11 @@ pub(crate) fn dock_summary(app: &tauri::AppHandle) -> (crate::dock::DockSummary,
 }
 
 #[tauri::command]
+fn open_pro_documentation() -> Result<(), String> {
+    crate::navigation::launch_pro_documentation()
+}
+
+#[tauri::command]
 fn get_overview(state: tauri::State<'_, AppState>) -> Overview {
     // Drop each guard before acquiring another; native painting and workers
     // access these caches independently while settings are being saved.
@@ -207,43 +212,6 @@ fn signin_input(
     code: Option<String>,
 ) -> Result<(), String> {
     crate::signin::send(&app, provider, code)
-}
-#[tauri::command]
-async fn get_browser_history(
-    app: tauri::AppHandle,
-    filter: crate::browser_history::BrowserFilter,
-) -> Result<crate::browser_history::BrowserPage, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        lock(&app.state::<AppState>().store).browser_history(&filter)
-    })
-    .await
-    .map_err(|_| "Browser history worker stopped")?
-}
-#[tauri::command]
-async fn import_browser_history(
-    app: tauri::AppHandle,
-    account_label: String,
-) -> Result<Option<crate::browser_history::BrowserImportReport>, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let path = app
-            .dialog()
-            .file()
-            .set_title("Choose conversations.json from your browser-chat export")
-            .add_filter("Conversation export", &["json"])
-            .blocking_pick_file()
-            .and_then(|p| p.into_path().ok());
-        let Some(path) = path else {
-            return Ok(None);
-        };
-        let state = app.state::<AppState>();
-        let result =
-            crate::browser_history::import_file(&mut lock(&state.store), &path, &account_label)?;
-        state.dirty.store(true, Ordering::Release);
-        let _ = app.emit("history-updated", ());
-        Ok(Some(result))
-    })
-    .await
-    .map_err(|_| "Browser import worker stopped")?
 }
 #[tauri::command]
 fn import_history(state: tauri::State<'_, AppState>) {
@@ -718,6 +686,7 @@ pub fn run() {
         )
         .invoke_handler(tauri::generate_handler![
             get_overview,
+            open_pro_documentation,
             get_history,
             get_usage_metrics,
             get_recommendations,
@@ -729,8 +698,6 @@ pub fn run() {
             reconnect_provider,
             get_signin_status,
             signin_input,
-            get_browser_history,
-            import_browser_history,
             take_pending_prompt,
             get_prompt_detail,
             open_original_prompt

@@ -26,3 +26,7 @@ Shared-folder sync relies on trusted writers and the storage service's access co
 Record native smoke-test results, platform builds, memory/CPU measurements and interactive verification in `VALIDATION.md`. Measure helpers/imports separately from idle use. Public reports and test outputs must not contain credentials or private history.
 
 Release packages are built on isolated CI runners. Stripping debug symbols does not necessarily remove compiler source paths from local binaries; locally built installers are kept out of public release uploads.
+
+## 0.5.0 changes under validation
+
+The manual browser import UI, export parser and dashboard IPC commands are removed. Legacy record validation and storage remain for retention and versioned sync compatibility. The documentation opener takes no destination argument and opens one fixed HTTPS source. Browser Pro caps are dated reference data; no browser credentials, scraping or inferred account counters were introduced. Static terminal styling adds no animation loop or remote font. Quota attribution now selects a post-completion reading and retains conservative window/overlap checks. Existing dependency caveats above remain applicable.

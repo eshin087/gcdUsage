@@ -23,8 +23,7 @@
     "allow-reconnect-provider",
     "allow-get-signin-status",
     "allow-signin-input",
-    "allow-get-browser-history",
-    "allow-import-browser-history"
+    "allow-open-pro-documentation"
   ],
   "local": true
 }

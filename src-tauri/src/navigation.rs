@@ -43,6 +43,13 @@ pub fn launch_original(url: &str) -> Result<(), String> {
     if browser_url(provider, id).as_deref() != Some(url) {
         return Err("Invalid conversation link".into());
     }
+    launch_url(url)
+}
+/// No frontend URL input: only this release's reviewed documentation destination.
+pub fn launch_pro_documentation() -> Result<(), String> {
+    launch_url("https://help.openai.com/en/articles/20001354-gpt-56-and-gpt-6-pro-in-chatgpt")
+}
+fn launch_url(url: &str) -> Result<(), String> {
     #[cfg(windows)]
     unsafe {
         use windows::core::PCWSTR;

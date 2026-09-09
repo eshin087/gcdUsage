@@ -35,9 +35,9 @@
   } from "./lib/types";
   import Icon from "./lib/Icon.svelte";
   import QuotaCard from "./lib/QuotaCard.svelte";
+  import ProAllowance from "./lib/ProAllowance.svelte";
   import TokenChart from "./lib/TokenChart.svelte";
   import DailyChart from "./lib/DailyChart.svelte";
-  import BrowserHistory from "./lib/BrowserHistory.svelte";
   import SignInPanel from "./lib/SignInPanel.svelte";
   import PromptDetails, {type PromptDetail} from './lib/PromptDetails.svelte';
   let selectedPrompt=$state<PromptDetail|null>(null);
@@ -45,11 +45,10 @@
   async function takePrompt(){const id=await api.pendingPrompt();if(id)await openPrompt(id)}
 
   type Page =
-    "overview" | "history" | "browser" | "recommendations" | "settings";
+    "overview" | "history" | "recommendations" | "settings";
   const pages: { id: Page; label: string }[] = [
     { id: "overview", label: "Overview" },
     { id: "history", label: "History" },
-    { id: "browser", label: "Browser chats" },
     { id: "recommendations", label: "Model advice" },
     { id: "settings", label: "Settings" },
   ];
@@ -459,16 +458,16 @@
 <div class="app-shell">
   <aside class="sidebar" aria-label="Main navigation">
     <div class="brand">
-      <img class="brand-mark" src="/logo.svg" alt="GCD"/><span>GCD<span class="brand-light">Usage</span></span>
+      <img class="brand-mark" src="/gcd-logo.png" alt="GCD"/><span>GCD<span class="brand-light">Usage</span></span>
     </div>
-    <div class="workspace-label">AI ACTIVITY CONSOLE</div>
+    <div class="workspace-label">[ AI USAGE / LOCAL NODE ]</div>
     <nav>
       {#each pages as item}<button
           class:active={page === item.id}
           aria-label={item.label}
           aria-current={page === item.id ? "page" : undefined}
           onclick={() => (page = item.id)}
-          ><Icon name={item.id === "browser" ? "history" : item.id} /><span
+          ><Icon name={item.id} /><span
             >{item.label}</span
           >{#if item.id === "history" && allStats?.promptCount}<span
               class="nav-count">{count(allStats.promptCount)}</span
@@ -492,34 +491,30 @@
       <div>
         <div class="eyebrow">
           {page === "overview"
-            ? "YOUR AI / IN FOCUS"
+            ? "SYS / TELEMETRY"
             : page === "history"
-              ? "EVERY PROMPT, ACCOUNTED FOR"
+              ? "LOG / REQUEST STREAM"
               : page === "recommendations"
-                ? "MAKE ROOM FOR YOUR NEXT IDEA"
-                : "MAKE YOURSELF AT HOME"}
+                ? "ROUTE / MODEL ADVICE"
+                : "CONFIG / LOCAL NODE"}
         </div>
         <h1>
           {page === "recommendations"
-            ? "The right model for the moment."
+            ? "Model routing"
             : page === "overview"
-              ? "Your usage, at a glance."
+              ? "Usage terminal"
               : page === "history"
                 ? "Prompt history"
-                : page === "browser"
-                  ? "Browser chat history"
-                  : "Settings"}
+                : "Settings"}
         </h1>
         <p>
           {page === "overview"
-            ? "Know what’s left. Keep your momentum."
+            ? "[ live allowance / measured activity / local intelligence ]"
             : page === "history"
               ? "Measured tokens from Claude Code and local Codex activity."
               : page === "recommendations"
                 ? "Local suggestions informed by your allowance and recent work."
-                : page === "browser"
-                  ? "Import available conversations from any computer."
-                  : "Connect once. Keep your meters close on every computer."}
+                : "Connections, display and shared history."}
         </p>
       </div>
       <button
@@ -558,9 +553,7 @@
       </div>{/if}
 
     <SignInPanel />
-    {#if page === "browser"}
-      <BrowserHistory onopen={openPrompt}/>
-    {:else if page === "overview"}
+    {#if page === "overview"}
       {#if overview && !overview.settings.setupComplete}<div
           class="setup-callout"
         >
@@ -612,6 +605,7 @@
           {reconnect}
         />
       </section>
+      <ProAllowance />
       <div class="reading-meta">
         <span
           ><span class="status-dot"></span>Updated {relativeTime(
@@ -622,7 +616,7 @@
       </div>
       <section class="section-heading">
         <div>
-          <h2>Your work in numbers</h2>
+          <h2>Activity telemetry</h2>
           <p>
             {timePresets.find(([key]) => key === timePreset)?.[1]} · {stats
               ?.computers.length ?? 0} computers
@@ -788,9 +782,7 @@
             <span class="subtle">All saved readings · all time</span>
           </div>
           <p class="fineprint">
-            Percentage-point changes across recorded windows. Prompt attribution
-            is estimated; overlapping or unseen work stays unallocated. Gaps and
-            resets leave incomplete coverage.
+            Remaining before − remaining after = observed consumption in percentage points. For example, 82% → 80% left means 2 pp consumed. Only isolated, completed prompts receive an estimate; overlapping or unseen work stays unallocated. Resets and missing readings are excluded.
           </p>
           <div class="table-scroll">
             <table>
@@ -950,19 +942,7 @@
               >{#each history.items as item (item.prompt.id)}<tr
                   class:expanded={expanded === item.prompt.id}
                   ><td
-                    ><div class="prompt-context">{item.prompt.project || 'Project unknown'} <span> / </span>{item.prompt.chatTitle || `Chat ${item.prompt.sessionId.slice(0,8)}`}</div><button class="prompt-preview prompt-link" onclick={()=>openPrompt(`local:${item.prompt.id}`)}>
-                      {item.prompt.preview || "(No prompt preview)"}
-                    </button>
-                    <div class="row-meta">
-                      <span class={`provider-dot ${item.prompt.provider}`}
-                      ></span>{providerName(item.prompt.provider)}<span>·</span
-                      >{dateTime(item.prompt.timestamp)}<span>·</span
-                      >{machineName(
-                        item.prompt.deviceId,
-                      )}{#if item.prompt.kind !== "user"}<span
-                          class="activity-tag">{item.prompt.kind}</span
-                        >{/if}
-                    </div></td
+                    ><div class="log-line"><span class={`provider-dot ${item.prompt.provider}`}></span><time title={dateTime(item.prompt.timestamp)}>{new Date(item.prompt.timestamp * 1000).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</time><span class="log-context" title={`${item.prompt.project || 'Project unknown'} / ${item.prompt.chatTitle || item.prompt.sessionId}`}>{item.prompt.project || 'Unknown project'}</span><button class="prompt-preview prompt-link" title={item.prompt.preview} onclick={()=>openPrompt(`local:${item.prompt.id}`)}>{item.prompt.preview || '(No prompt preview)'}</button></div></td
                   ><td
                     ><span class="model-name">{modelsFor(item)}</span><span
                       class="effort-chip">{effortsFor(item)}</span
@@ -1446,7 +1426,7 @@
               >
               <p class="fineprint">
                 {overview?.syncHealth?.pendingEvents ?? 0} records waiting to be published.
-                Update GCD Usage on every computer to use browser-history sync.
+                Keep GCD Usage updated on each computer for compatible history sync.
               </p>
               {#each overview?.syncHealth?.devices ?? [] as device}
                 <div class="connection-row">

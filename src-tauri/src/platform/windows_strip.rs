@@ -388,6 +388,13 @@ unsafe fn palette() -> Palette {
             purple: rgb(104, 70, 173),
         };
     }
+    if theme == ColorTheme::Black {
+        return Palette {
+            bg: rgb(0, 0, 0), card: rgb(7, 16, 11), border: rgb(36, 67, 49),
+            text: rgb(220, 239, 225), muted: rgb(155, 184, 164),
+            orange: rgb(102, 255, 153), green: rgb(102, 255, 153), purple: rgb(102, 255, 153),
+        };
+    }
     let (bg, card) = match theme {
         ColorTheme::Slate => (rgb(18, 23, 30), rgb(26, 34, 45)),
         ColorTheme::Midnight => (rgb(9, 13, 30), rgb(17, 24, 47)),
