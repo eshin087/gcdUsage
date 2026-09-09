@@ -35,6 +35,13 @@ async function main(){
    assert.ok(d.prompts.filter(p=>p.browser).every(p=>p.tokens===null));
    intervals.push({minutes,tokens:total,requests:rows.length,prompts:d.prompts.length});
   }
+  assert.equal(initial.settings.dockScale,100);
+  for(const size of [80,100,160,100]){
+   await page.getByRole('slider',{name:'Dock size',exact:true}).fill(String(size));
+   await page.getByRole('button',{name:'Save changes',exact:true}).click();
+   const o=await invoke('get_overview');assert.equal(o.settings.dockScale,size);assert.equal(o.settings.fontScale,initial.settings.fontScale);
+  }
+  for(const dockScale of [0,79,161,100.5]){await assert.rejects(()=>invoke('save_settings',{settings:{...initial.settings,dockScale}}));}
   for(const minutes of [0,-1,43201,1.5]){await assert.rejects(()=>invoke('save_settings',{settings:{...initial.settings,dockMinutes:minutes}}));}
   const toggle=page.getByRole('checkbox',{name:/^Show prompt previews on hover/});
   await toggle.setChecked(false);await page.getByRole('button',{name:'Save changes',exact:true}).click();
@@ -44,7 +51,7 @@ async function main(){
   await invoke('save_settings',{settings:initial.settings});await waitDock(60);
   assert.deepEqual(errors,[]);db.close();
   const out=process.env.GCD_QA_OUTPUT_DIR || '.local-test/dock-qa';await fs.mkdir(out,{recursive:true});
-  const report={intervals,invalidDurationsRejected:true,previewTogglePersisted:true,errors};await fs.writeFile(path.join(out,'dock-report.json'),JSON.stringify(report,null,2));console.log(JSON.stringify(report,null,2));
+  const report={intervals,invalidDurationsRejected:true,previewTogglePersisted:true,dockSizeIndependent:true,invalidDockSizesRejected:true,errors};await fs.writeFile(path.join(out,'dock-report.json'),JSON.stringify(report,null,2));console.log(JSON.stringify(report,null,2));
   await invoke('plugin:window|close',{label:'dashboard'}).catch(e=>{if(!/closed|crashed|destroyed/i.test(String(e)))throw e;});
  } finally {await browser.close().catch(()=>{});}
 }

@@ -460,6 +460,11 @@
     <div class="brand">
       <img class="brand-mark" src="/gcd-logo.png" alt="GCD"/><span>GCD<span class="brand-light">Usage</span></span>
     </div>
+    <pre class="terminal-art" aria-hidden="true">{`[quota]-----[logs]
+   |          |
+   +---[gcd]--+
+         |
+     [insight]`}</pre>
     <div class="workspace-label">[ AI USAGE / LOCAL NODE ]</div>
     <nav>
       {#each pages as item}<button
@@ -1219,10 +1224,15 @@
                 oninput={() => (dirty = true)}
               />
               <span class="fineprint"
-                >90%–160% · Default 120%. Preview changes here, then save to
-                update the strip.</span
+                >90%–160% · Dashboard and hover history. Dock size is controlled separately.</span
               >
             </label>
+            {#if isWindows}
+              <label class="form-field font-control">Dock size · {settings.dockScale ?? 100}%
+                <input aria-label="Dock size" type="range" min="80" max="160" step="5" bind:value={settings.dockScale} oninput={() => (dirty = true)} />
+                <span class="fineprint">80%–160% · Default 100%. Resize the dock independently from dashboard text. Also available in the dock's right-click menu.</span>
+              </label>
+            {/if}
             {#if isWindows}<label class="toggle-row"
                 ><span
                   ><strong>Lock strip position</strong><small

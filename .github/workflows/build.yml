@@ -52,6 +52,14 @@ jobs:
       - run: npm run check
       - run: npm test
       - run: cargo test --manifest-path src-tauri/Cargo.toml --lib --locked --target ${{ matrix.target }}
+        env:
+          GCD_QA_OUTPUT_DIR: ${{ runner.temp }}/gcd-native-render
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: runner.os == 'Windows'
+        with:
+          name: native-render-${{ matrix.target }}
+          path: ${{ runner.temp }}/gcd-native-render/*.bmp
+          if-no-files-found: error
       - run: npm run app:build -- --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
         env:
           APPLE_SIGNING_IDENTITY: "-"

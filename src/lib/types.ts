@@ -173,6 +173,7 @@ export interface AppSettings {
   meterDisplay: MeterDisplay;
   stripLocked: boolean;
   fontScale: number;
+  dockScale: number;
   dockMinutes: number;
   dockPreviews: boolean;
 }

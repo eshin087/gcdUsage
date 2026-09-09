@@ -312,6 +312,7 @@ pub struct AppSettings {
     pub meter_display: MeterDisplay,
     pub strip_locked: bool,
     pub font_scale: u16,
+    pub dock_scale: u16,
     pub dock_minutes: u32,
     pub dock_previews: bool,
 }
@@ -337,6 +338,7 @@ impl Default for AppSettings {
             meter_display: MeterDisplay::Remaining,
             strip_locked: false,
             font_scale: 120,
+            dock_scale: 100,
             dock_minutes: 60,
             dock_previews: true,
         }
@@ -420,6 +422,7 @@ mod display_settings_tests {
         assert_eq!(settings.meter_display, MeterDisplay::Remaining);
         assert!(!settings.strip_locked);
         assert_eq!(settings.font_scale, 120);
+        assert_eq!(settings.dock_scale, 100);
         assert_eq!(settings.device_id, "existing");
         assert_eq!(settings.strip_x, Some(-1500));
         assert_eq!(settings.strip_y, Some(200));

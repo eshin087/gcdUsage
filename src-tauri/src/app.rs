@@ -148,6 +148,21 @@ async fn open_original_prompt(app: tauri::AppHandle, id: String) -> Result<bool,
     .await
     .map_err(|_| "Navigation worker stopped".to_string())?
 }
+pub(crate) fn dock_scale(app: &tauri::AppHandle) -> u16 {
+    lock(&app.state::<AppState>().settings).dock_scale.clamp(80, 160)
+}
+pub(crate) fn set_dock_scale(app: &tauri::AppHandle, scale: u16) -> Result<(), String> {
+    if !(80..=160).contains(&scale) { return Err("Dock size must be between 80 and 160 percent".into()); }
+    let state = app.state::<AppState>();
+    {
+        let mut settings = lock(&state.settings);
+        let mut next = settings.clone(); next.dock_scale = scale;
+        persist(&state.settings_path, &next)?; *settings = next;
+    }
+    crate::platform::settings_changed();
+    let _ = app.emit("settings-updated", ());
+    Ok(())
+}
 pub(crate) fn set_dock_minutes(app: &tauri::AppHandle, minutes: u32) -> Result<(), String> {
     if !(1..=43200).contains(&minutes) {
         return Err("Use 1 to 43200 minutes".into());
@@ -258,6 +273,9 @@ fn save_settings(app: tauri::AppHandle, mut settings: AppSettings) -> Result<App
     }
     if !(90..=160).contains(&settings.font_scale) {
         return Err("Font size must be between 90 and 160 percent".into());
+    }
+    if !(80..=160).contains(&settings.dock_scale) {
+        return Err("Dock size must be between 80 and 160 percent".into());
     }
     if !(1..=43200).contains(&settings.dock_minutes) {
         return Err("Dock interval must be between 1 minute and 30 days".into());
@@ -734,6 +752,7 @@ pub fn run() {
                 AppSettings::default()
             };
             settings.font_scale = settings.font_scale.clamp(90, 160);
+            settings.dock_scale = settings.dock_scale.clamp(80, 160);
             settings.dock_minutes = settings.dock_minutes.clamp(1, 43200);
             persist(&settings_path, &settings).map_err(std::io::Error::other)?;
             let store = Store::open(&data.join("usage.sqlite3")).map_err(std::io::Error::other)?;

@@ -31,6 +31,7 @@ const settings: AppSettings = {
   meterDisplay: "remaining",
   stripLocked: false,
   fontScale: 120,
+  dockScale: 100,
   dockMinutes: 60,
   dockPreviews: true,
 };

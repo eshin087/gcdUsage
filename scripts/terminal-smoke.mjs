@@ -8,6 +8,7 @@ const page=await browser.newPage({viewport:{width:1280,height:900}});
 const errors=[];page.on('pageerror',e=>errors.push(e.message));
 try {
  await page.goto('http://127.0.0.1:1420/?preview=1');await page.locator('.quota-card').first().waitFor();await page.waitForFunction(()=>!document.body.innerText.includes('Updating statistics'));
+ await page.evaluate(()=>document.fonts.ready);
  await mkdir('.local-test/v05/screens',{recursive:true});
  assert.equal(await page.locator('nav button').count(),4);
  assert.equal(await page.getByRole('button',{name:'Browser chats'}).count(),0);

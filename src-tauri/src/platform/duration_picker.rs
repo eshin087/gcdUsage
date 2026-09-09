@@ -28,6 +28,16 @@ pub(super) unsafe fn duration_menu() {
     AppendMenuW(menu, MF_SEPARATOR, 0, null());
     AppendMenuW(menu, MF_STRING, 50001, wide("Custom duration…").as_ptr());
     AppendMenuW(menu, MF_STRING, 50002, wide("Open dashboard").as_ptr());
+    let size_menu = CreatePopupMenu();
+    if !size_menu.is_null() {
+        let current_scale = APP.get().map(crate::app::dock_scale).unwrap_or(100);
+        for scale in [80u16, 100, 120, 140, 160] {
+            AppendMenuW(size_menu, MF_STRING | if scale == current_scale { MF_CHECKED } else { 0 },
+                60000 + scale as usize, wide(&format!("{scale}%")).as_ptr());
+        }
+        AppendMenuW(menu, MF_SEPARATOR, 0, null());
+        AppendMenuW(menu, MF_POPUP, size_menu as usize, wide("Dock size").as_ptr());
+    }
     let mut p: POINT = std::mem::zeroed();
     GetCursorPos(&mut p);
     SetForegroundWindow(hwnd());
@@ -45,6 +55,13 @@ pub(super) unsafe fn duration_menu() {
     match choice {
         50001 => custom_duration(current),
         50002 => open_dashboard(),
+        60080..=60160 => {
+            if let Some(app) = APP.get() {
+                if let Err(error) = crate::app::set_dock_scale(app, (choice - 60000) as u16) {
+                    MessageBoxW(hwnd(), wide(&error).as_ptr(), wide("Size not saved").as_ptr(), MB_OK | MB_ICONERROR);
+                }
+            }
+        },
         1..=43200 => save(choice as u32),
         _ => {}
     }

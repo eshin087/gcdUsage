@@ -1,9 +1,11 @@
+@font-face{font-family:"GCD Terminal";src:url('/fonts/IBMPlexMono-Regular.woff2') format('woff2');font-style:normal;font-weight:400;font-display:swap}
+@font-face{font-family:"GCD Terminal";src:url('/fonts/IBMPlexMono-Light.woff2') format('woff2');font-style:normal;font-weight:300;font-display:swap}
 /* Static terminal surfaces: no animation loop, external fonts or GPU effects. */
-:root {font-family:"Cascadia Code","SFMono-Regular",Consolas,"Liberation Mono",monospace}
+:root {font-family:"GCD Terminal","Cascadia Mono",Consolas,monospace;font-weight:400;font-variant-ligatures:none;letter-spacing:0}
 :root:not([data-theme="light"]):not([data-theme="slate"]):not([data-theme="midnight"]) {
  --bg:#000;--surface:#07100b;--sidebar:#030805;--ink:#dcefe1;--muted:#9bb8a4;--faint:#88a691;
- --line:#244331;--accent:#66ff99;--accent-soft:#102e1a;--claude:#66ff99;--codex:#a2e8b9;
- --button-bg:#173e25;--button-ink:#dcefe1;--nav-bg:#10321d;--nav-ink:#66ff99;--shadow:none;
+ --line:#244331;--accent:#80e7a2;--accent-soft:#102e1a;--claude:#66ff99;--codex:#a2e8b9;
+ --button-bg:#173e25;--button-ink:#dcefe1;--nav-bg:#10321d;--nav-ink:#80e7a2;--shadow:none;
 }
 .app-shell {background:var(--bg);grid-template-columns:200px minmax(0,1fr)}
 .sidebar {border-right:1px solid var(--line);padding-top:22px;background:var(--sidebar)}
@@ -43,3 +45,17 @@ h1 {font-size:1.85rem;font-weight:600;letter-spacing:-.045em}.eyebrow {color:var
 .filters {grid-template-columns:repeat(auto-fit,minmax(min(100%,150px),1fr))}.filters label,.filters input,.filters select {min-width:0;width:100%}.panel,.stats-grid {min-width:0}
 @media(max-width:950px){main{padding:20px}.app-shell{grid-template-columns:172px minmax(0,1fr)}.brand{font-size:1rem}.brand-mark{width:42px;height:42px}.pro-allowance{grid-template-columns:repeat(3,1fr)}.pro-label{grid-column:1/-1}.pro-remaining{border-left:0;padding:0}.quota-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+/* Thin typography and static ASCII instrumentation. */
+h1,h2,h3,.quota-value,.stat-item>strong,.pro-allowance strong {font-weight:300;letter-spacing:0}
+.app-shell button,.app-shell strong,.app-shell th,.brand,.sidebar nav button.active {font-weight:400}
+.brand {letter-spacing:0;font-size:1.05rem}.brand-mark {image-rendering:pixelated}
+h1 {font-size:1.8rem}.page-header p {font-size:.78rem;font-weight:300}
+.terminal-art {margin:20px 0 0;font:300 .62rem/1.55 "GCD Terminal",monospace;color:var(--muted);letter-spacing:.02em;user-select:none}
+.workspace-label {margin-top:20px}.sidebar nav button {padding:10px 8px}
+.quota-card {border-top-width:1px;padding:12px}.quota-value {font-size:1.9rem}
+.quota-track {height:18px;overflow:visible;background:transparent;border:0;margin:4px 0}
+.ascii-meter {display:block;font-size:.72rem;line-height:18px;color:var(--accent);letter-spacing:.03em;white-space:nowrap}
+.pro-allowance {border-style:dashed}.pro-allowance strong {font-size:1.1rem}.pro-label>strong {font-size:.8rem}
+.panel,.quota-card,.stat-item {border-radius:0}.button,input,select {border-radius:0}
+.history-table .prompt-link {font-weight:400;font-size:.8rem}.history-table .model-name {font-weight:300;font-size:.7rem}.history-table .numeric {font-weight:400}
+.filters {grid-template-columns:repeat(auto-fit,minmax(min(100%,120px),1fr))}

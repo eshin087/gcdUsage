@@ -83,6 +83,13 @@ unsafe fn scale(window: HWND) -> f64 {
             .unwrap_or(120) as f64
         / 100.0
 }
+unsafe fn dock_scale(window: HWND) -> f64 {
+    let requested = GetDpiForWindow(window).max(96) as f64 / 96.0
+        * APP.get().map(crate::app::dock_scale).unwrap_or(100) as f64 / 100.0;
+    let work = monitor(window, None).rcWork;
+    requested.min((work.right - work.left).max(1) as f64 / 800.0)
+        .min((work.bottom - work.top).max(1) as f64 / 56.0).max(0.01)
+}
 unsafe fn window_rect(window: HWND) -> RECT {
     let mut r: RECT = std::mem::zeroed();
     GetWindowRect(window, &mut r);
@@ -221,11 +228,11 @@ pub fn shutdown() {
 }
 unsafe fn position_window(window: HWND, saved: Option<(i32, i32)>) {
     let info = monitor(window, saved.map(|(x, y)| POINT { x, y }));
-    let s = scale(window);
+    let s = dock_scale(window);
     let width = ((800.0 * s).round() as i32)
         .min(info.rcWork.right - info.rcWork.left)
         .max(1);
-    let height = ((84.0 * s).round() as i32)
+    let height = ((56.0 * s).round() as i32)
         .min(info.rcWork.bottom - info.rcWork.top)
         .max(1);
     let (x, y) = strip_origin(
@@ -237,7 +244,7 @@ unsafe fn position_window(window: HWND, saved: Option<(i32, i32)>) {
         (10.0 * s) as i32,
     );
     SetWindowPos(window, HWND_TOPMOST, x, y, width, height, SWP_NOACTIVATE);
-    rounded(window, width, height, (24.0 * s) as i32);
+    rounded(window, width, height, (3.0 * s) as i32);
     SetWindowTextW(
         window,
         wide(if locked() {
@@ -280,7 +287,7 @@ unsafe fn show_card() {
         (6.0 * s) as i32,
     );
     SetWindowPos(popup(), HWND_TOPMOST, x, y, w, h, SWP_NOACTIVATE);
-    rounded(popup(), w, h, (22.0 * s) as i32);
+    rounded(popup(), w, h, (3.0 * s) as i32);
     ShowWindow(popup(), SW_SHOWNOACTIVATE);
     InvalidateRect(popup(), null(), 0);
 }
@@ -289,7 +296,7 @@ unsafe fn hover_tick() {
     GetCursorPos(&mut p);
     let r = window_rect(hwnd());
     let now = Instant::now();
-    let over = contains(r, p).then(|| dock_cell(p.x - r.left, r.right - r.left, scale(hwnd())));
+    let over = contains(r, p).then(|| dock_cell(p.x - r.left, r.right - r.left, dock_scale(hwnd())));
     let visible = !popup().is_null() && IsWindowVisible(popup()) != 0;
     let on_card = visible && contains(window_rect(popup()), p);
     let decision = {
@@ -442,7 +449,7 @@ unsafe fn font(size: i32, weight: i32) -> HFONT {
         CLIP_DEFAULT_PRECIS as u32,
         CLEARTYPE_QUALITY as u32,
         DEFAULT_PITCH as u32,
-        wide("Segoe UI").as_ptr(),
+        wide("Consolas").as_ptr(),
     )
 }
 unsafe fn text(dc: HDC, font: HFONT, color: u32, value: &str, mut r: RECT) {
@@ -466,7 +473,7 @@ unsafe fn paint(window: HWND, card: bool) {
     let bitmap = CreateCompatibleBitmap(target, bounds.right.max(1), bounds.bottom.max(1));
     let old_bitmap = SelectObject(dc, bitmap);
     let p = palette();
-    let s = scale(hwnd());
+    let s = if card { scale(hwnd()) } else { dock_scale(hwnd()) };
     let (summary, previews) = APP.get().map(crate::app::dock_summary).unwrap_or_default();
     let cells = CELLS
         .get()
@@ -493,8 +500,8 @@ unsafe fn draw_surface(
 ) {
     let px = |v: f64| (v * s).round() as i32;
     let fsmall = font(px(-10.5), 400);
-    let fmedium = font(px(-12.0), 500);
-    let flarge = font(px(-19.0), 600);
+    let fmedium = font(px(-12.0), 400);
+    let flarge = font(px(-19.0), 400);
     SetBkMode(dc, TRANSPARENT as i32);
     fill(dc, bounds, p.bg);
     round(
@@ -507,7 +514,7 @@ unsafe fn draw_surface(
         },
         p.bg,
         p.border,
-        px(22.0),
+        px(3.0),
     );
     if card {
         let index = HOVER.load(Ordering::Acquire);
@@ -590,7 +597,7 @@ unsafe fn draw_surface(
                 right: bounds.right - px(12.0),
                 bottom: top + row_h - px(3.0),
             };
-            round(dc, row_bounds, p.card, p.card, px(9.0));
+            round(dc, row_bounds, p.card, p.card, px(2.0));
             text(
                 dc,
                 fsmall,
@@ -715,49 +722,49 @@ unsafe fn draw_surface(
                 dc,
                 RECT {
                     left,
-                    top: inset,
+                    top: px(3.0),
                     right: left + width,
-                    bottom: bounds.bottom - inset,
+                    bottom: bounds.bottom - px(3.0),
                 },
-                p.card,
-                if hovered { accent } else { p.card },
-                px(15.0),
+                p.bg,
+                if hovered { accent } else { p.border },
+                px(2.0),
             );
             let r = |y: f64, h: f64| RECT {
-                left: left + px(10.0),
+                left: left + px(7.0),
                 top: px(y),
-                right: left + width - px(9.0),
+                right: left + width - px(6.0),
                 bottom: px(y + h),
             };
             if i < 4 {
                 if let Some((label, value, stale)) = cells.get(i) {
                     let (main, reset) = value.split_once(" · ").unwrap_or((value.as_str(), ""));
-                    text(dc, fsmall, accent, label, r(12.0, 16.0));
+                    text(dc, fsmall, accent, label, r(4.0, 13.0));
                     text(
                         dc,
                         flarge,
                         if *stale { p.muted } else { p.text },
                         main,
-                        r(29.0, 26.0),
+                        r(17.0, 20.0),
                     );
                     text(
                         dc,
                         fsmall,
                         p.muted,
-                        &format!("Reset {reset}"),
-                        r(57.0, 15.0),
+                        &format!("rst {reset}"),
+                        r(37.0, 13.0),
                     );
                 }
             } else {
                 let label = if summary.updated_at.is_some() {
                     format!(
-                        "LAST {} · CHANGE ▾",
+                        "[{}] tokens / menu",
                         interval(summary.minutes).to_uppercase()
                     )
                 } else {
                     "RECORDED ACTIVITY".into()
                 };
-                text(dc, fsmall, accent, &label, r(12.0, 16.0));
+                text(dc, fsmall, accent, &label, r(4.0, 13.0));
                 let value = if summary.updated_at.is_some() {
                     format!(
                         "{}{}",
@@ -771,13 +778,13 @@ unsafe fn draw_surface(
                 } else {
                     "—".into()
                 };
-                text(dc, flarge, p.text, &value, r(29.0, 26.0));
+                text(dc, flarge, p.text, &value, r(17.0, 20.0));
                 text(
                     dc,
                     fsmall,
                     p.muted,
                     &summary.model_summary(None, 2),
-                    r(57.0, 15.0),
+                    r(37.0, 13.0),
                 );
             }
         }
@@ -857,12 +864,12 @@ mod render_tests {
                 ("Codex · week".into(), "92% left · 5d 2h".into(), false),
             ];
             for (name, card, s, previews, index, small) in [
-                ("dock", false, 1.2, true, -1, false),
+                ("dock", false, 1.0, true, -1, false),
                 ("claude-hover", true, 1.2, true, 0, false),
                 ("codex-hover", true, 1.2, true, 3, false),
                 ("activity-hover", true, 1.2, true, 4, false),
                 ("private-hover", true, 1.6, false, 0, true),
-                ("small-font", false, 0.9, true, -1, false),
+                ("small-font", false, 0.8, true, -1, false),
                 ("large-font", false, 1.6, true, -1, false),
             ] {
                 HOVER.store(index, Ordering::Release);
@@ -875,7 +882,7 @@ mod render_tests {
                         790.0
                     }
                 } else {
-                    84.0
+                    56.0
                 } * s) as i32;
                 let dc = CreateCompatibleDC(null_mut());
                 let mut info: BITMAPINFO = std::mem::zeroed();
@@ -1048,7 +1055,7 @@ unsafe extern "system" fn wndproc(window: HWND, msg: u32, w: WPARAM, l: LPARAM) 
             } else if press.is_some() {
                 let x = (l as u16) as i16 as i32;
                 let r = window_rect(window);
-                if dock_cell(x, r.right - r.left, scale(window)) == 4 {
+                if dock_cell(x, r.right - r.left, dock_scale(window)) == 4 {
                     duration_menu()
                 } else {
                     open_dashboard()

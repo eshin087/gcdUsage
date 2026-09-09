@@ -50,3 +50,7 @@ All four platform jobs passed for version 0.2.0. The [preview release](https://g
 Browser-import counts describe exported messages. Exact historical token consumption, hidden reasoning, and original-device attribution are not inferred. Shared-folder receipts describe what each device reported receiving.
 
 Performance depends on history size and temporary import or provider helpers. Packages are personal previews without trusted publisher signing.
+
+## 0.5.1 revision under validation
+
+The user requested thinner terminal typography, a sharper pixel-style logo, embedded ASCII art and independent dock resizing. Frontend checks pass. Native resizing and revised packages are pending; previous 0.5.0 results above do not yet validate this revision.

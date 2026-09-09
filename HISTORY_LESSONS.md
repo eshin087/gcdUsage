@@ -44,3 +44,5 @@ This file records project-specific preferences and lessons, not private conversa
 ## 0.5 preferences and boundaries
 
 The user prefers a single-color lowercase gcd identity generated with the image tool, Matrix-style static black/green surfaces, compact Overview cards and single-line history for skimming. The user confirmed Browser ChatGPT Pro on the $200 tier. Public caps are reference data, not observed request counts. Browser work cannot be counted from local Codex activity. Remove manual browser uploads; retain prior data without adding manual workflows. Remaining-quota deltas measure interval consumption; per-prompt attribution still requires isolated snapshots and stays explicitly estimated.
+
+The user rejected the first 0.5 logo as blurry and thick/wobbly, and wanted thinner terminal typography, more embedded ASCII art, and a slimmer dock with independent size controls. Avoid heavy bold lettering and rounded dock cards. Use the pixel-style generated mark, locally bundled light/regular terminal fonts in the dashboard, regular native monospace text and static ASCII instrumentation. Dock scaling is separate from dashboard/hover font size.

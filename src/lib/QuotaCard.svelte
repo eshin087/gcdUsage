@@ -60,10 +60,7 @@
       ? "Unavailable"
       : `${Math.round(value!)}% ${unit}${stale ? ", stale reading" : ""}`}
   >
-    <div
-      style={`width:${value ?? 0}%`}
-      class:critical={used != null && used >= 90}
-    ></div>
+    <span class="ascii-meter" aria-hidden="true">{value == null ? '[------------]' : '[' + '|'.repeat(Math.round(value / 100 * 12)) + '.'.repeat(12 - Math.round(value / 100 * 12)) + ']'}</span>
   </div>
   <div class="quota-footer">
     <span
