@@ -942,9 +942,9 @@
               >{#each history.items as item (item.prompt.id)}<tr
                   class:expanded={expanded === item.prompt.id}
                   ><td
-                    ><div class="log-line"><span class={`provider-dot ${item.prompt.provider}`}></span><time title={dateTime(item.prompt.timestamp)}>{new Date(item.prompt.timestamp * 1000).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</time><span class="log-context" title={`${item.prompt.project || 'Project unknown'} / ${item.prompt.chatTitle || item.prompt.sessionId}`}>{item.prompt.project || 'Unknown project'}</span><button class="prompt-preview prompt-link" title={item.prompt.preview} onclick={()=>openPrompt(`local:${item.prompt.id}`)}>{item.prompt.preview || '(No prompt preview)'}</button></div></td
+                    ><div class="log-line"><span class={`provider-dot ${item.prompt.provider}`}></span><time title={dateTime(item.prompt.timestamp)}>{new Date(item.prompt.timestamp * 1000).toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'})}</time><span class="log-context" title={`${item.prompt.project || 'Project unknown'} / ${item.prompt.chatTitle || item.prompt.sessionId}`}>{item.prompt.project || 'Unknown project'}</span><button class="prompt-preview prompt-link" title={item.prompt.preview} onclick={()=>openPrompt(`local:${item.prompt.id}`)}>{item.prompt.preview || '(No prompt preview)'}</button></div></td
                   ><td
-                    ><span class="model-name">{modelsFor(item)}</span><span
+                    ><span class="model-name" title={`${modelsFor(item)} / ${effortsFor(item)}`}>{modelsFor(item)}</span><span
                       class="effort-chip">{effortsFor(item)}</span
                     ></td
                   ><td class="numeric"
@@ -1289,7 +1289,7 @@
               >
               <p class="fineprint">
                 Recorded activity includes all local and synced computers.
-                Browser imports have unknown token usage. Dock activity
+                Dock activity
                 refreshes after imports and at least once a minute.
               </p>
             {/if}

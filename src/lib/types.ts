@@ -218,28 +218,3 @@ export interface SignInProgress {
   phase: string;
   message: string;
 }
-export interface BrowserPrompt {
-  conversationId: string;
-  chatTitle?: string | null;
-  id: string;
-  provider: string;
-  accountLabel: string;
-  timestamp: number | null;
-  preview: string;
-  models: string[];
-  effort: string | null;
-  replies: number;
-}
-export interface BrowserPage {
-  items: BrowserPrompt[];
-  total: number;
-  conversations: number;
-  replies: number;
-}
-export interface BrowserFilter {
-  query: string;
-  provider: string;
-  from: number | null;
-  to: number | null;
-  offset: number;
-}

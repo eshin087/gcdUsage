@@ -418,10 +418,6 @@ export async function previewInvoke<T>(
       return [] as T;
     case "signin_input":
       return undefined as T;
-    case "get_browser_history":
-      return { items: [], total: 0, conversations: 0, replies: 0 } as T;
-    case "import_browser_history":
-      return null as T;
     default:
       throw new Error(`Preview command unavailable: ${command}`);
   }
