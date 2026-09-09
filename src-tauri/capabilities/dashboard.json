@@ -1,0 +1,27 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "dashboard",
+  "description": "The local dashboard can receive app events; privileged operations use validated Rust commands.",
+  "windows": [
+    "dashboard"
+  ],
+  "permissions": [
+    "core:event:default",
+    "core:window:allow-close",
+    "allow-get-overview",
+    "allow-get-history",
+    "allow-get-usage-metrics",
+    "allow-get-recommendations",
+    "allow-refresh-usage",
+    "allow-import-history",
+    "allow-save-settings",
+    "allow-select-sync-folder",
+    "allow-export-history",
+    "allow-reconnect-provider",
+    "allow-get-signin-status",
+    "allow-signin-input",
+    "allow-get-browser-history",
+    "allow-import-browser-history"
+  ],
+  "local": true
+}

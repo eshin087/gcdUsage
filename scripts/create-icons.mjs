@@ -1,0 +1,10 @@
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { deflateSync } from 'node:zlib';
+const dir = new URL('../src-tauri/icons/', import.meta.url);
+mkdirSync(dir, { recursive: true });
+function crc32(buffer) { let crc=0xffffffff; for (const b of buffer) {crc^=b;for(let j=0;j<8;j++)crc=(crc>>>1)^((crc&1)?0xedb88320:0);}return (crc^0xffffffff)>>>0; }
+function chunk(type,data){const t=Buffer.from(type),n=Buffer.alloc(4),c=Buffer.alloc(4);n.writeUInt32BE(data.length);c.writeUInt32BE(crc32(Buffer.concat([t,data])));return Buffer.concat([n,t,data,c]);}
+function png(size){const pixels=Buffer.alloc((size*4+1)*size);for(let y=0;y<size;y++)for(let x=0;x<size;x++) {const nx=x/size,ny=y/size;let c=[25,42,35,255];const radius=.2;const cx=Math.max(radius,Math.min(1-radius,nx)),cy=Math.max(radius,Math.min(1-radius,ny));if(Math.hypot(nx-cx,ny-cy)>radius)c=[0,0,0,0];for(let i=0;i<3;i++){const left=.22+i*.21,top=[.49,.28,.39][i];if(nx>=left&&nx<left+.13&&ny>=top&&ny<.77)c=i===1?[198,230,166,255]:[118,184,151,255];}const offset=y*(size*4+1)+1+x*4;for(let k=0;k<4;k++)pixels[offset+k]=c[k];}const head=Buffer.alloc(13);head.writeUInt32BE(size);head.writeUInt32BE(size,4);head[8]=8;head[9]=6;return Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]),chunk('IHDR',head),chunk('IDAT',deflateSync(pixels)),chunk('IEND',Buffer.alloc(0))]);}
+for(const size of [32,128,256])writeFileSync(new URL(`${size}x${size}.png`,dir),png(size));
+const sizes=[16,32,48,256],frames=sizes.map(png),header=Buffer.alloc(6+16*sizes.length);header.writeUInt16LE(1,2);header.writeUInt16LE(sizes.length,4);let offset=header.length;for(let i=0;i<sizes.length;i++){const p=6+i*16;header[p]=sizes[i]%256;header[p+1]=sizes[i]%256;header.writeUInt16LE(1,p+4);header.writeUInt16LE(32,p+6);header.writeUInt32LE(frames[i].length,p+8);header.writeUInt32LE(offset,p+12);offset+=frames[i].length;}writeFileSync(new URL('icon.ico',dir),Buffer.concat([header,...frames]));
+const mac=png(1024),icns=Buffer.alloc(16);icns.write('icns');icns.writeUInt32BE(mac.length+16,4);icns.write('ic10',8);icns.writeUInt32BE(mac.length+8,12);writeFileSync(new URL('icon.icns',dir),Buffer.concat([icns,mac]));

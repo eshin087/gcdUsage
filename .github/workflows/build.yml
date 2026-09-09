@@ -1,0 +1,83 @@
+name: Desktop packages
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: read
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            bundles: nsis
+          - os: windows-11-arm
+            target: aarch64-pc-windows-msvc
+            bundles: nsis
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+            bundles: app,dmg
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            bundles: app,dmg
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: rust-${{ matrix.target }}-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: rust-${{ matrix.target }}-
+      - name: Read application version
+        id: package_version
+        shell: bash
+        run: node -p "'version=' + require('./package.json').version" >> "$GITHUB_OUTPUT"
+      - run: npm ci
+      - run: npm run check
+      - run: npm test
+      - run: cargo test --manifest-path src-tauri/Cargo.toml --lib --locked --target ${{ matrix.target }}
+      - run: npm run app:build -- --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
+        env:
+          APPLE_SIGNING_IDENTITY: "-"
+      - name: Smoke-test macOS background launch
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          GCD_TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          test_dir="$RUNNER_TEMP/gcd-usage-native-smoke"
+          mkdir -p "$test_dir"
+          printf '%s\n' '{"setupComplete":true,"launchAtLogin":false}' > "$test_dir/settings.json"
+          app_binary="src-tauri/target/$GCD_TARGET/release/bundle/macos/GCD Usage.app/Contents/MacOS/gcd-usage"
+          GCD_USAGE_TEST_MODE=1 GCD_USAGE_DATA_DIR="$test_dir" "$app_binary" --background > "$test_dir/app.log" 2>&1 &
+          app_pid=$!
+          trap 'kill "$app_pid" 2>/dev/null || true' EXIT
+          sleep 15
+          kill -0 "$app_pid"
+          ps -p "$app_pid" -o pid=,rss=,%cpu=,comm=
+          test -f "$test_dir/usage.sqlite3"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: gcd-usage-${{ matrix.target }}
+          path: |
+            src-tauri/target/${{ matrix.target }}/release/bundle/nsis/*_${{ steps.package_version.outputs.version }}_*.exe
+            src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*_${{ steps.package_version.outputs.version }}_*.dmg
+            src-tauri/target/${{ matrix.target }}/release/bundle/macos/*.app/
+          if-no-files-found: error
