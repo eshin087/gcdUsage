@@ -12,7 +12,7 @@ The default is a black theme, percentage **left**, and 120% text size. Settings 
 
 ## Install and set up
 
-Download the matching Windows x64/ARM64 or macOS Intel/Apple Silicon package from [Releases](https://github.com/eshin087/gcd-usage/releases). Windows installs per user. On macOS, drag the app into Applications.
+Download the matching Windows x64/ARM64 or macOS Intel/Apple Silicon package from [Releases](https://github.com/eshin087/gcdUsage/releases). Windows installs per user. On macOS, drag the app into Applications.
 
 These are personal preview builds without trusted publisher signing. Your operating system may require first-launch approval. Updates are manual.
 
@@ -37,8 +37,6 @@ The app retains a short prompt preview and usage metadata. **Previews can contai
 History synchronization is optional, and no hosted GCD Usage account is required. See [Security](SECURITY.md) for responsible reporting and security guidance.
 
 Select the same shared folder on each computer, give each computer a recognizable name, and keep all installations updated. Settings shows the most recent folder check, pending records, and reported delivery status for other devices. A folder check alone does not confirm delivery to another computer.
-
-For Google Drive, install Drive for desktop on each computer and create a dedicated GCD Usage folder inside My Drive. Make that folder available offline, then select it in GCD Usage Settings on each computer. Leave Drive for desktop running so changes can be delivered. See Google's [streaming and offline-file guidance](https://support.google.com/drive/answer/13401938). A browser-only Drive session does not provide the local shared folder this version needs.
 
 ## Download size
 
