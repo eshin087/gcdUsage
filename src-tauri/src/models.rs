@@ -308,6 +308,8 @@ pub struct AppSettings {
     pub meter_display: MeterDisplay,
     pub strip_locked: bool,
     pub font_scale: u16,
+    pub dock_minutes: u32,
+    pub dock_previews: bool,
 }
 impl Default for AppSettings {
     fn default() -> Self {
@@ -331,6 +333,8 @@ impl Default for AppSettings {
             meter_display: MeterDisplay::Remaining,
             strip_locked: false,
             font_scale: 120,
+            dock_minutes: 60,
+            dock_previews: true,
         }
     }
 }
@@ -378,6 +382,7 @@ pub struct RecommendationSet {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Overview {
+    pub dock: crate::dock::DockSummary,
     pub snapshots: Vec<QuotaSnapshot>,
     pub stats: DashboardStats,
     pub settings: AppSettings,

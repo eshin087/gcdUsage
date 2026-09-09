@@ -32,6 +32,7 @@ pub struct AppState {
     last_sync: Mutex<Option<i64>>,
     sync_message: Mutex<Option<String>>,
     sync_health: Mutex<sync::SyncHealth>,
+    dock: RwLock<crate::dock::DockSummary>,
     watcher: Mutex<Option<RecommendedWatcher>>,
 }
 fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -72,17 +73,35 @@ pub fn request_refresh(app: &tauri::AppHandle) {
         .store(true, Ordering::Release);
 }
 
+pub(crate) fn dock_summary(app: &tauri::AppHandle) -> (crate::dock::DockSummary, bool) {
+    let state = app.state::<AppState>();
+    let previews = lock(&state.settings).dock_previews;
+    let summary = state.dock.read().unwrap().clone();
+    (summary, previews)
+}
+
 #[tauri::command]
 fn get_overview(state: tauri::State<'_, AppState>) -> Overview {
+    // Drop each guard before acquiring another; native painting and workers
+    // access these caches independently while settings are being saved.
+    let dock = state.dock.read().unwrap().clone();
+    let snapshots = state.snapshots.read().unwrap().clone();
+    let stats = state.stats.read().unwrap().clone();
+    let settings = lock(&state.settings).clone();
+    let import_report = lock(&state.report).clone();
+    let last_sync = *lock(&state.last_sync);
+    let sync_message = lock(&state.sync_message).clone();
+    let sync_health = lock(&state.sync_health).clone();
     Overview {
-        snapshots: state.snapshots.read().unwrap().clone(),
-        stats: state.stats.read().unwrap().clone(),
-        settings: lock(&state.settings).clone(),
-        import_report: lock(&state.report).clone(),
+        dock,
+        snapshots,
+        stats,
+        settings,
+        import_report,
         importing: state.importing.load(Ordering::Acquire),
-        last_sync: *lock(&state.last_sync),
-        sync_message: lock(&state.sync_message).clone(),
-        sync_health: lock(&state.sync_health).clone(),
+        last_sync,
+        sync_message,
+        sync_health,
     }
 }
 #[tauri::command]
@@ -216,6 +235,9 @@ fn save_settings(app: tauri::AppHandle, mut settings: AppSettings) -> Result<App
     if !(90..=160).contains(&settings.font_scale) {
         return Err("Font size must be between 90 and 160 percent".into());
     }
+    if !(1..=43200).contains(&settings.dock_minutes) {
+        return Err("Dock interval must be between 1 minute and 30 days".into());
+    }
     if settings.device_name.trim().is_empty() {
         return Err("Enter a computer name".into());
     }
@@ -267,6 +289,14 @@ fn save_settings(app: tauri::AppHandle, mut settings: AppSettings) -> Result<App
         request_refresh(&app);
     }
     platform::settings_changed();
+    state.dirty.store(true, Ordering::Release);
+    // Do not display a previous interval's number while the new summary loads.
+    {
+        let mut dock = state.dock.write().unwrap();
+        if dock.minutes != settings.dock_minutes {
+            *dock = crate::dock::DockSummary::default();
+        }
+    }
     platform::update(&app, &state.snapshots.read().unwrap());
     let _ = app.emit("settings-updated", ());
     Ok(settings)
@@ -538,6 +568,14 @@ async fn maintenance(app: tauri::AppHandle, import: bool) {
         if let Ok(stats) = store.stats(None, None) {
             *state.stats.write().unwrap() = stats;
         }
+        if let Ok(summary) = store.dock_summary(settings.dock_minutes, Utc::now().timestamp()) {
+            let still_current = lock(&state.settings).dock_minutes == settings.dock_minutes;
+            if still_current {
+                *state.dock.write().unwrap() = summary;
+            }
+        } else {
+            *state.dock.write().unwrap() = crate::dock::DockSummary::default();
+        }
         if let Ok(stats) = store.stats(Some(Utc::now().timestamp() - 30 * 86400), None) {
             *state.advice_stats.write().unwrap() = stats;
         }
@@ -549,6 +587,7 @@ async fn maintenance(app: tauri::AppHandle, import: bool) {
             .push("The history worker stopped; retry importing.".into());
     }
     state.importing.store(false, Ordering::Release);
+    platform::update(&app, &state.snapshots.read().unwrap());
     let _ = app.emit("history-updated", ());
 }
 
@@ -669,6 +708,7 @@ pub fn run() {
                 AppSettings::default()
             };
             settings.font_scale = settings.font_scale.clamp(90, 160);
+            settings.dock_minutes = settings.dock_minutes.clamp(1, 43200);
             persist(&settings_path, &settings).map_err(std::io::Error::other)?;
             let store = Store::open(&data.join("usage.sqlite3")).map_err(std::io::Error::other)?;
             let snapshots = store.latest_snapshots().unwrap_or_default();
@@ -691,6 +731,7 @@ pub fn run() {
                 last_sync: Mutex::new(None),
                 sync_message: Mutex::new(None),
                 sync_health: Mutex::new(sync::SyncHealth::default()),
+                dock: RwLock::new(crate::dock::DockSummary::default()),
                 watcher: Mutex::new(None),
             });
             app.manage(crate::signin::SignIns::default());

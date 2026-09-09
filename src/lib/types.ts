@@ -171,6 +171,8 @@ export interface AppSettings {
   meterDisplay: MeterDisplay;
   stripLocked: boolean;
   fontScale: number;
+  dockMinutes: number;
+  dockPreviews: boolean;
 }
 export interface Recommendation {
   provider: Provider;

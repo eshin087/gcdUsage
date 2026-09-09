@@ -1,32 +1,114 @@
-//! A native GDI window: no resident webview, browser process, or animation loop.
-use super::geometry::{strip_origin, Rect};
-use crate::models::ColorTheme;
+//! Native, double-buffered dock and hover card. No resident webview or animation loop.
+use super::geometry::{
+    dock_cell, drag_origin, hover_decision, popup_origin, strip_origin, HoverDecision, Rect,
+};
+use crate::{
+    dock::{compact, interval},
+    models::ColorTheme,
+};
 use std::{
     mem::size_of,
     ptr::{null, null_mut},
     sync::{
-        atomic::{AtomicIsize, Ordering},
+        atomic::{AtomicIsize, AtomicUsize, Ordering},
         Mutex, OnceLock,
     },
+    time::Instant,
 };
 use tauri::AppHandle;
 use windows_sys::Win32::{
     Foundation::*,
     Graphics::Gdi::*,
     System::{LibraryLoader::GetModuleHandleW, Registry::*},
-    UI::{HiDpi::*, WindowsAndMessaging::*},
+    UI::{
+        HiDpi::*,
+        Input::KeyboardAndMouse::{ReleaseCapture, SetCapture},
+        WindowsAndMessaging::*,
+    },
 };
 
 static HANDLE: AtomicIsize = AtomicIsize::new(0);
+static POPUP: AtomicIsize = AtomicIsize::new(0);
+static HOVER: AtomicIsize = AtomicIsize::new(-1);
+static SCROLL: AtomicUsize = AtomicUsize::new(0);
 static APP: OnceLock<AppHandle> = OnceLock::new();
 static CELLS: OnceLock<Mutex<Vec<(String, String, bool)>>> = OnceLock::new();
+static POINTER: OnceLock<Mutex<Pointer>> = OnceLock::new();
 const REPAINT: u32 = WM_APP + 1;
 const SETTINGS_CHANGED: u32 = WM_APP + 2;
+const HOVER_TIMER: usize = 1;
+struct Pointer {
+    entered: Instant,
+    inside: Instant,
+    press: Option<(POINT, RECT, bool)>,
+}
+fn pointer() -> std::sync::MutexGuard<'static, Pointer> {
+    POINTER
+        .get_or_init(|| {
+            Mutex::new(Pointer {
+                entered: Instant::now(),
+                inside: Instant::now(),
+                press: None,
+            })
+        })
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+}
 fn wide(text: &str) -> Vec<u16> {
     text.encode_utf16().chain(Some(0)).collect()
 }
 fn rgb(r: u32, g: u32, b: u32) -> u32 {
     r | g << 8 | b << 16
+}
+fn hwnd() -> HWND {
+    HANDLE.load(Ordering::Acquire) as HWND
+}
+fn popup() -> HWND {
+    POPUP.load(Ordering::Acquire) as HWND
+}
+fn locked() -> bool {
+    APP.get()
+        .map(|a| crate::app::display_settings(a).2)
+        .unwrap_or(false)
+}
+unsafe fn scale(window: HWND) -> f64 {
+    GetDpiForWindow(window).max(96) as f64 / 96.0
+        * APP
+            .get()
+            .map(|a| crate::app::display_settings(a).3)
+            .unwrap_or(120) as f64
+        / 100.0
+}
+unsafe fn window_rect(window: HWND) -> RECT {
+    let mut r: RECT = std::mem::zeroed();
+    GetWindowRect(window, &mut r);
+    r
+}
+fn convert(r: RECT) -> Rect {
+    Rect {
+        left: r.left,
+        top: r.top,
+        right: r.right,
+        bottom: r.bottom,
+    }
+}
+fn contains(r: RECT, p: POINT) -> bool {
+    p.x >= r.left && p.x < r.right && p.y >= r.top && p.y < r.bottom
+}
+unsafe fn monitor(window: HWND, point: Option<POINT>) -> MONITORINFO {
+    let m = point
+        .map(|p| MonitorFromPoint(p, MONITOR_DEFAULTTONEAREST))
+        .unwrap_or_else(|| MonitorFromWindow(window, MONITOR_DEFAULTTONEAREST));
+    let mut info: MONITORINFO = std::mem::zeroed();
+    info.cbSize = size_of::<MONITORINFO>() as u32;
+    GetMonitorInfoW(m, &mut info);
+    info
+}
+unsafe fn rounded(window: HWND, w: i32, h: i32, r: i32) {
+    let region = CreateRoundRectRgn(0, 0, w + 1, h + 1, r, r);
+    if SetWindowRgn(window, region, 1) == 0 {
+        DeleteObject(region);
+    }
 }
 
 pub fn create(app: AppHandle) {
@@ -41,12 +123,14 @@ pub fn create(app: AppHandle) {
         ))
     });
     std::thread::Builder::new()
-        .name("usage-strip".into())
+        .name("usage-dock".into())
         .spawn(move || unsafe {
             SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
             let instance = GetModuleHandleW(null());
             let name = wide("GcdUsageNativeStrip");
+            let card_name = wide("GcdUsageHoverCard");
             let mut class: WNDCLASSW = std::mem::zeroed();
+            class.style = CS_DROPSHADOW;
             class.lpfnWndProc = Some(wndproc);
             class.hInstance = instance;
             class.lpszClassName = name.as_ptr();
@@ -54,27 +138,46 @@ pub fn create(app: AppHandle) {
             if RegisterClassW(&class) == 0 {
                 return;
             }
-            let hwnd = CreateWindowExW(
+            class.lpfnWndProc = Some(cardproc);
+            class.lpszClassName = card_name.as_ptr();
+            if RegisterClassW(&class) == 0 {
+                return;
+            }
+            let dock = CreateWindowExW(
                 WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
                 name.as_ptr(),
-                wide("GCD Usage · drag the left grip, click to open").as_ptr(),
+                wide("GCD Usage · drag anywhere · click to open").as_ptr(),
                 WS_POPUP,
                 0,
                 0,
-                500,
-                56,
+                640,
+                84,
                 null_mut(),
                 null_mut(),
                 instance,
                 null(),
             );
-            if hwnd.is_null() {
+            if dock.is_null() {
                 return;
             }
-            HANDLE.store(hwnd as isize, Ordering::Release);
-            let position = crate::strip_position(&app);
-            position_window(hwnd, position);
-            ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+            HANDLE.store(dock as isize, Ordering::Release);
+            let card = CreateWindowExW(
+                WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
+                card_name.as_ptr(),
+                wide("GCD Usage · recent prompts").as_ptr(),
+                WS_POPUP,
+                0,
+                0,
+                560,
+                590,
+                dock,
+                null_mut(),
+                instance,
+                null(),
+            );
+            POPUP.store(card as isize, Ordering::Release);
+            position_window(dock, crate::strip_position(&app));
+            ShowWindow(dock, SW_SHOWNOACTIVATE);
             let mut msg: MSG = std::mem::zeroed();
             while GetMessageW(&mut msg, null_mut(), 0, 0) > 0 {
                 TranslateMessage(&msg);
@@ -85,175 +188,233 @@ pub fn create(app: AppHandle) {
 }
 pub fn update(cells: Vec<(String, String, bool)>) {
     *CELLS
-        .get_or_init(|| Mutex::new(Vec::new()))
+        .get_or_init(|| Mutex::new(vec![]))
         .lock()
         .unwrap_or_else(|e| e.into_inner()) = cells;
-    let hwnd = HANDLE.load(Ordering::Acquire) as HWND;
-    if !hwnd.is_null() {
-        unsafe {
-            PostMessageW(hwnd, REPAINT, 0, 0);
+    unsafe {
+        if !hwnd().is_null() {
+            PostMessageW(hwnd(), REPAINT, 0, 0);
         }
     }
 }
 pub fn settings_changed() {
-    let hwnd = HANDLE.load(Ordering::Acquire) as HWND;
-    if !hwnd.is_null() {
-        unsafe {
-            PostMessageW(hwnd, SETTINGS_CHANGED, 0, 0);
+    unsafe {
+        if !hwnd().is_null() {
+            PostMessageW(hwnd(), SETTINGS_CHANGED, 0, 0);
         }
     }
-}
-fn locked() -> bool {
-    APP.get()
-        .map(|app| crate::app::display_settings(app).2)
-        .unwrap_or(false)
 }
 pub fn shutdown() {
-    let hwnd = HANDLE.load(Ordering::Acquire) as HWND;
-    if !hwnd.is_null() {
-        unsafe {
-            PostMessageW(hwnd, WM_CLOSE, 0, 0);
+    unsafe {
+        if !hwnd().is_null() {
+            PostMessageW(hwnd(), WM_CLOSE, 0, 0);
         }
     }
 }
-
-unsafe fn position_window(hwnd: HWND, saved: Option<(i32, i32)>) {
-    let mut rect: RECT = std::mem::zeroed();
-    GetWindowRect(hwnd, &mut rect);
-    let pt = saved.map(|(x, y)| POINT { x, y }).unwrap_or(POINT {
-        x: rect.left,
-        y: rect.top,
-    });
-    let monitor = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
-    let mut info: MONITORINFO = std::mem::zeroed();
-    info.cbSize = size_of::<MONITORINFO>() as u32;
-    if GetMonitorInfoW(monitor, &mut info) == 0 {
-        return;
-    }
-    let scale = display_scale(hwnd);
-    let width = ((500.0 * scale) as i32)
+unsafe fn position_window(window: HWND, saved: Option<(i32, i32)>) {
+    let info = monitor(window, saved.map(|(x, y)| POINT { x, y }));
+    let s = scale(window);
+    let width = ((640.0 * s).round() as i32)
         .min(info.rcWork.right - info.rcWork.left)
         .max(1);
-    let height = ((56.0 * scale) as i32)
+    let height = ((84.0 * s).round() as i32)
         .min(info.rcWork.bottom - info.rcWork.top)
         .max(1);
-    let margin = (8.0 * scale) as i32;
-    let convert = |r: RECT| Rect {
-        left: r.left,
-        top: r.top,
-        right: r.right,
-        bottom: r.bottom,
-    };
     let (x, y) = strip_origin(
         convert(info.rcMonitor),
         convert(info.rcWork),
         (width, height),
         saved,
         false,
-        margin,
+        (10.0 * s) as i32,
     );
+    SetWindowPos(window, HWND_TOPMOST, x, y, width, height, SWP_NOACTIVATE);
+    rounded(window, width, height, (24.0 * s) as i32);
     SetWindowTextW(
-        hwnd,
+        window,
         wide(if locked() {
             "GCD Usage · position locked · click to open"
         } else {
-            "GCD Usage · drag the left grip, click to open"
+            "GCD Usage · drag anywhere · click to open"
         })
         .as_ptr(),
     );
-    if rect.left == x
-        && rect.top == y
-        && rect.right - rect.left == width
-        && rect.bottom - rect.top == height
-    {
+}
+unsafe fn hide_card() {
+    if !popup().is_null() {
+        ShowWindow(popup(), SW_HIDE);
+    }
+    HOVER.store(-1, Ordering::Release);
+    KillTimer(hwnd(), HOVER_TIMER);
+    InvalidateRect(hwnd(), null(), 0);
+}
+unsafe fn show_card() {
+    if popup().is_null() || HOVER.load(Ordering::Acquire) < 0 {
         return;
     }
-    SetWindowPos(hwnd, HWND_TOPMOST, x, y, width, height, SWP_NOACTIVATE);
-}
-unsafe fn display_scale(hwnd: HWND) -> f64 {
-    let font = APP
-        .get()
-        .map(|app| crate::app::display_settings(app).3)
-        .unwrap_or(120);
-    GetDpiForWindow(hwnd).max(96) as f64 / 96.0 * font as f64 / 100.0
-}
-unsafe fn light_theme() -> bool {
-    let mut value = 1u32;
-    let mut bytes = 4u32;
-    RegGetValueW(
-        HKEY_CURRENT_USER,
-        wide("Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize").as_ptr(),
-        wide("AppsUseLightTheme").as_ptr(),
-        RRF_RT_REG_DWORD,
-        null_mut(),
-        &mut value as *mut _ as *mut _,
-        &mut bytes,
+    let dock = window_rect(hwnd());
+    let info = monitor(hwnd(), None);
+    let s = scale(hwnd());
+    let w = ((560.0 * s) as i32)
+        .min(info.rcWork.right - info.rcWork.left - 8)
+        .max(1);
+    let h = ((590.0 * s) as i32)
+        .min(info.rcWork.bottom - info.rcWork.top - 8)
+        .max(1);
+    let (x, y) = popup_origin(
+        convert(dock),
+        convert(info.rcWork),
+        (w, h),
+        (6.0 * s) as i32,
     );
-    value != 0
+    SetWindowPos(popup(), HWND_TOPMOST, x, y, w, h, SWP_NOACTIVATE);
+    rounded(popup(), w, h, (22.0 * s) as i32);
+    ShowWindow(popup(), SW_SHOWNOACTIVATE);
+    InvalidateRect(popup(), null(), 0);
 }
-unsafe fn paint(hwnd: HWND) {
-    let mut paint: PAINTSTRUCT = std::mem::zeroed();
-    let dc = BeginPaint(hwnd, &mut paint);
-    let mut bounds: RECT = std::mem::zeroed();
-    GetClientRect(hwnd, &mut bounds);
+unsafe fn hover_tick() {
+    let mut p: POINT = std::mem::zeroed();
+    GetCursorPos(&mut p);
+    let r = window_rect(hwnd());
+    let now = Instant::now();
+    let over = contains(r, p).then(|| dock_cell(p.x - r.left, r.right - r.left, scale(hwnd())));
+    let visible = !popup().is_null() && IsWindowVisible(popup()) != 0;
+    let on_card = visible && contains(window_rect(popup()), p);
+    let decision = {
+        let mut state = pointer();
+        let decision = hover_decision(
+            HOVER.load(Ordering::Acquire),
+            over,
+            on_card,
+            visible,
+            state.press.is_some(),
+            now.duration_since(state.entered).as_millis(),
+            now.duration_since(state.inside).as_millis(),
+        );
+        if over.is_some() || on_card {
+            state.inside = now;
+        }
+        if matches!(decision, HoverDecision::Switch(_)) {
+            state.entered = now;
+        }
+        decision
+    };
+    match decision {
+        HoverDecision::Switch(index) => {
+            HOVER.store(index as isize, Ordering::Release);
+            SCROLL.store(0, Ordering::Release);
+            if !popup().is_null() {
+                ShowWindow(popup(), SW_HIDE);
+            }
+            InvalidateRect(hwnd(), null(), 0);
+        }
+        HoverDecision::Show => show_card(),
+        HoverDecision::Hide => hide_card(),
+        HoverDecision::Keep => {}
+    }
+}
+unsafe fn open_dashboard() {
+    hide_card();
+    if let Some(app) = APP.get() {
+        let a = app.clone();
+        let _ = app.run_on_main_thread(move || {
+            let _ = super::show_dashboard(&a);
+        });
+    }
+}
+unsafe fn save_position() {
+    let r = window_rect(hwnd());
+    position_window(hwnd(), Some((r.left, r.top)));
+    let r = window_rect(hwnd());
+    if let Some(app) = APP.get() {
+        crate::save_strip_position(app, r.left, r.top);
+    }
+}
+
+struct Palette {
+    bg: u32,
+    card: u32,
+    border: u32,
+    text: u32,
+    muted: u32,
+    orange: u32,
+    green: u32,
+    purple: u32,
+}
+unsafe fn palette() -> Palette {
     let mut theme = APP
         .get()
-        .map(|app| crate::app::display_settings(app).0)
+        .map(|a| crate::app::display_settings(a).0)
         .unwrap_or_default();
     if theme == ColorTheme::System {
-        theme = if light_theme() {
+        let mut light = 1u32;
+        let mut bytes = 4;
+        RegGetValueW(
+            HKEY_CURRENT_USER,
+            wide("Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize").as_ptr(),
+            wide("AppsUseLightTheme").as_ptr(),
+            RRF_RT_REG_DWORD,
+            null_mut(),
+            &mut light as *mut _ as *mut _,
+            &mut bytes,
+        );
+        theme = if light != 0 {
             ColorTheme::Light
         } else {
             ColorTheme::Slate
         };
     }
-    let (background, foreground, muted, accent_color) = match theme {
-        ColorTheme::Light => (
-            rgb(248, 249, 247),
-            rgb(39, 51, 47),
-            rgb(102, 114, 106),
-            rgb(82, 120, 90),
-        ),
-        ColorTheme::Slate => (
-            rgb(21, 25, 31),
-            rgb(231, 237, 245),
-            rgb(161, 175, 190),
-            rgb(165, 201, 226),
-        ),
-        ColorTheme::Midnight => (
-            rgb(9, 15, 32),
-            rgb(233, 237, 255),
-            rgb(165, 177, 207),
-            rgb(178, 190, 250),
-        ),
-        _ => (
-            rgb(0, 0, 0),
-            rgb(240, 242, 245),
-            rgb(161, 168, 179),
-            rgb(164, 200, 176),
-        ),
+    if theme == ColorTheme::Light {
+        return Palette {
+            bg: rgb(244, 246, 250),
+            card: rgb(255, 255, 255),
+            border: rgb(212, 219, 229),
+            text: rgb(23, 31, 46),
+            muted: rgb(88, 101, 118),
+            orange: rgb(161, 74, 29),
+            green: rgb(28, 116, 93),
+            purple: rgb(104, 70, 173),
+        };
+    }
+    let (bg, card) = match theme {
+        ColorTheme::Slate => (rgb(18, 23, 30), rgb(26, 34, 45)),
+        ColorTheme::Midnight => (rgb(9, 13, 30), rgb(17, 24, 47)),
+        _ => (rgb(0, 0, 0), rgb(13, 16, 21)),
     };
-    let brush = CreateSolidBrush(background);
-    FillRect(dc, &bounds, brush);
-    DeleteObject(brush);
-    let accent = CreateSolidBrush(accent_color);
-    let edge = RECT {
-        left: 0,
-        top: 0,
-        right: 3,
-        bottom: bounds.bottom,
-    };
-    FillRect(dc, &edge, accent);
-    DeleteObject(accent);
-    SetBkMode(dc, TRANSPARENT as i32);
-    let scale = display_scale(hwnd);
-    let px = |value: f64| (value * scale).round() as i32;
-    let label_font = CreateFontW(
-        px(-11.0),
+    Palette {
+        bg,
+        card,
+        border: rgb(43, 50, 61),
+        text: rgb(239, 244, 251),
+        muted: rgb(151, 164, 183),
+        orange: rgb(242, 168, 120),
+        green: rgb(108, 221, 180),
+        purple: rgb(181, 159, 255),
+    }
+}
+unsafe fn fill(dc: HDC, r: RECT, color: u32) {
+    let b = CreateSolidBrush(color);
+    FillRect(dc, &r, b);
+    DeleteObject(b);
+}
+unsafe fn round(dc: HDC, r: RECT, color: u32, border: u32, radius: i32) {
+    let b = CreateSolidBrush(color);
+    let p = CreatePen(PS_SOLID, 1, border);
+    let old_b = SelectObject(dc, b);
+    let old_p = SelectObject(dc, p);
+    RoundRect(dc, r.left, r.top, r.right, r.bottom, radius, radius);
+    SelectObject(dc, old_b);
+    SelectObject(dc, old_p);
+    DeleteObject(b);
+    DeleteObject(p);
+}
+unsafe fn font(size: i32, weight: i32) -> HFONT {
+    CreateFontW(
+        size,
         0,
         0,
         0,
-        500,
+        weight,
         0,
         0,
         0,
@@ -263,156 +424,626 @@ unsafe fn paint(hwnd: HWND) {
         CLEARTYPE_QUALITY as u32,
         DEFAULT_PITCH as u32,
         wide("Segoe UI").as_ptr(),
-    );
-    let value_font = CreateFontW(
-        px(-14.0),
-        0,
-        0,
-        0,
-        600,
-        0,
-        0,
-        0,
-        DEFAULT_CHARSET as u32,
-        OUT_DEFAULT_PRECIS as u32,
-        CLIP_DEFAULT_PRECIS as u32,
-        CLEARTYPE_QUALITY as u32,
-        DEFAULT_PITCH as u32,
-        wide("Segoe UI").as_ptr(),
-    );
-    let old = SelectObject(dc, label_font);
-    SetTextColor(dc, muted);
-    let mut grip = RECT {
-        left: px(8.0),
-        top: 0,
-        right: px(25.0),
-        bottom: bounds.bottom,
-    };
-    let grip_text = wide(if locked() { "•" } else { "⠿" });
+    )
+}
+unsafe fn text(dc: HDC, font: HFONT, color: u32, value: &str, mut r: RECT) {
+    let old = SelectObject(dc, font);
+    SetTextColor(dc, color);
     DrawTextW(
         dc,
-        grip_text.as_ptr(),
+        wide(value).as_ptr(),
         -1,
-        &mut grip,
-        DT_SINGLELINE | DT_VCENTER | DT_CENTER,
+        &mut r,
+        DT_SINGLELINE | DT_END_ELLIPSIS | DT_NOPREFIX | DT_VCENTER,
     );
+    SelectObject(dc, old);
+}
+unsafe fn paint(window: HWND, card: bool) {
+    let mut ps: PAINTSTRUCT = std::mem::zeroed();
+    let target = BeginPaint(window, &mut ps);
+    let mut bounds: RECT = std::mem::zeroed();
+    GetClientRect(window, &mut bounds);
+    let dc = CreateCompatibleDC(target);
+    let bitmap = CreateCompatibleBitmap(target, bounds.right.max(1), bounds.bottom.max(1));
+    let old_bitmap = SelectObject(dc, bitmap);
+    let p = palette();
+    let s = scale(hwnd());
+    let (summary, previews) = APP.get().map(crate::app::dock_summary).unwrap_or_default();
     let cells = CELLS
         .get()
         .unwrap()
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .clone();
-    let start = px(32.0);
-    let cell_width = (bounds.right - start) / 3;
-    for (i, (label, value, stale)) in cells.iter().enumerate() {
-        SelectObject(dc, label_font);
-        SetTextColor(dc, muted);
-        let left = start + i as i32 * cell_width;
-        let mut label_rect = RECT {
-            left,
-            top: px(7.0),
-            right: left + cell_width - px(8.0),
-            bottom: px(24.0),
-        };
-        DrawTextW(
-            dc,
-            wide(label).as_ptr(),
-            -1,
-            &mut label_rect,
-            DT_SINGLELINE | DT_END_ELLIPSIS,
-        );
-        SelectObject(dc, value_font);
-        SetTextColor(dc, if *stale { muted } else { foreground });
-        let mut value_rect = RECT {
-            left,
-            top: px(26.0),
-            right: left + cell_width - px(8.0),
-            bottom: px(49.0),
-        };
-        DrawTextW(
-            dc,
-            wide(value).as_ptr(),
-            -1,
-            &mut value_rect,
-            DT_SINGLELINE | DT_END_ELLIPSIS,
-        );
-    }
-    SelectObject(dc, old);
-    DeleteObject(label_font);
-    DeleteObject(value_font);
-    EndPaint(hwnd, &paint);
+    draw_surface(dc, bounds, p, s, card, &summary, previews, &cells);
+    BitBlt(target, 0, 0, bounds.right, bounds.bottom, dc, 0, 0, SRCCOPY);
+    SelectObject(dc, old_bitmap);
+    DeleteObject(bitmap);
+    DeleteDC(dc);
+    EndPaint(window, &ps);
 }
-unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+unsafe fn draw_surface(
+    dc: HDC,
+    bounds: RECT,
+    p: Palette,
+    s: f64,
+    card: bool,
+    summary: &crate::dock::DockSummary,
+    previews: bool,
+    cells: &[(String, String, bool)],
+) {
+    let px = |v: f64| (v * s).round() as i32;
+    let fsmall = font(px(-10.5), 400);
+    let fmedium = font(px(-12.0), 500);
+    let flarge = font(px(-19.0), 600);
+    SetBkMode(dc, TRANSPARENT as i32);
+    fill(dc, bounds, p.bg);
+    round(
+        dc,
+        RECT {
+            left: 0,
+            top: 0,
+            right: bounds.right,
+            bottom: bounds.bottom,
+        },
+        p.bg,
+        p.border,
+        px(22.0),
+    );
+    if card {
+        let index = HOVER.load(Ordering::Acquire);
+        let provider = match index {
+            0 | 1 => Some("claude"),
+            2 => Some("codex"),
+            _ => None,
+        };
+        let accent = match index {
+            0 | 1 => p.orange,
+            2 => p.green,
+            _ => p.purple,
+        };
+        let title = match index {
+            0 | 1 => "Claude · recent prompts",
+            2 => "Codex / ChatGPT · recent prompts",
+            _ => "All activity · recent prompts",
+        };
+        let r = |y: f64, h: f64| RECT {
+            left: px(18.0),
+            top: px(y),
+            right: bounds.right - px(18.0),
+            bottom: px(y + h),
+        };
+        text(dc, flarge, p.text, title, r(12.0, 28.0));
+        let total = provider
+            .map(|v| summary.provider_tokens.get(v).copied().unwrap_or(0))
+            .unwrap_or(summary.tokens);
+        let total_text = if summary.updated_at.is_some() {
+            format!(
+                "{} logged tokens · last {}",
+                compact(total),
+                interval(summary.minutes)
+            )
+        } else {
+            "Loading recorded activity…".into()
+        };
+        text(dc, fmedium, accent, &total_text, r(43.0, 22.0));
+        text(
+            dc,
+            fsmall,
+            p.muted,
+            &summary.model_summary(provider, 3),
+            r(69.0, 20.0),
+        );
+        let age = summary
+            .updated_at
+            .map(|t| (chrono::Utc::now().timestamp() - t).max(0));
+        let note = if age.is_some_and(|n| n > 120) {
+            "History may be stale · open dashboard to refresh"
+        } else {
+            "Latest prompts · lifetime prompt tokens · model / reasoning"
+        };
+        text(dc, fsmall, p.muted, note, r(91.0, 20.0));
+        let rows = summary.recent(provider);
+        let row_h = px(42.0).max(1);
+        let start = px(120.0);
+        let visible = ((bounds.bottom - start - px(40.0)) / row_h).max(1) as usize;
+        let max_scroll = rows.len().saturating_sub(visible);
+        let offset = SCROLL.load(Ordering::Acquire).min(max_scroll);
+        SCROLL.store(offset, Ordering::Release);
+        if rows.is_empty() {
+            text(
+                dc,
+                fmedium,
+                p.muted,
+                if summary.updated_at.is_some() {
+                    "No recorded prompts yet"
+                } else {
+                    "History is loading…"
+                },
+                r(145.0, 28.0),
+            );
+        }
+        for (i, row) in rows.iter().skip(offset).take(visible).enumerate() {
+            let top = start + i as i32 * row_h;
+            let row_bounds = RECT {
+                left: px(12.0),
+                top,
+                right: bounds.right - px(12.0),
+                bottom: top + row_h - px(3.0),
+            };
+            round(dc, row_bounds, p.card, p.card, px(9.0));
+            let preview = if previews {
+                if row.preview.is_empty() {
+                    "No text preview"
+                } else {
+                    &row.preview
+                }
+            } else {
+                "Prompt preview hidden"
+            };
+            let token = row.tokens.map(compact).unwrap_or_else(|| "—".into());
+            text(
+                dc,
+                fmedium,
+                p.text,
+                preview,
+                RECT {
+                    left: px(20.0),
+                    top: top + px(2.0),
+                    right: bounds.right - px(90.0),
+                    bottom: top + px(20.0),
+                },
+            );
+            text(
+                dc,
+                fmedium,
+                accent,
+                &token,
+                RECT {
+                    left: bounds.right - px(81.0),
+                    top: top + px(2.0),
+                    right: bounds.right - px(17.0),
+                    bottom: top + px(20.0),
+                },
+            );
+            let time = row
+                .timestamp
+                .and_then(|t| chrono::DateTime::from_timestamp(t, 0))
+                .map(|t| {
+                    t.with_timezone(&chrono::Local)
+                        .format("%b %d %H:%M")
+                        .to_string()
+                })
+                .unwrap_or_else(|| "Unknown time".into());
+            let detail = format!(
+                "{} · {} · {}{}",
+                time,
+                row.models,
+                row.status,
+                if row.browser { " · browser" } else { "" }
+            );
+            text(
+                dc,
+                fsmall,
+                p.muted,
+                &detail,
+                RECT {
+                    left: px(20.0),
+                    top: top + px(21.0),
+                    right: bounds.right - px(20.0),
+                    bottom: top + px(37.0),
+                },
+            );
+        }
+        let footer = if rows.len() > visible {
+            format!(
+                "{}–{} of {} · scroll for more · browser tokens unknown",
+                offset + 1,
+                (offset + visible).min(rows.len()),
+                rows.len()
+            )
+        } else if summary.unknown_requests > 0 {
+            format!(
+                "{} requests lack tokens · all computers / accounts",
+                summary.unknown_requests
+            )
+        } else {
+            "All computers / accounts · browser tokens unknown".into()
+        };
+        text(
+            dc,
+            fsmall,
+            p.muted,
+            &footer,
+            RECT {
+                left: px(18.0),
+                top: bounds.bottom - px(31.0),
+                right: bounds.right - px(18.0),
+                bottom: bounds.bottom - px(8.0),
+            },
+        );
+    } else {
+        let gap = px(5.0);
+        let inset = px(7.0);
+        let width = (bounds.right - inset * 2 - gap * 3) / 4;
+        for i in 0..4 {
+            let left = inset + i as i32 * (width + gap);
+            let accent = if i < 2 {
+                p.orange
+            } else if i == 2 {
+                p.green
+            } else {
+                p.purple
+            };
+            let hovered = HOVER.load(Ordering::Acquire) == i as isize;
+            round(
+                dc,
+                RECT {
+                    left,
+                    top: inset,
+                    right: left + width,
+                    bottom: bounds.bottom - inset,
+                },
+                p.card,
+                if hovered { accent } else { p.card },
+                px(15.0),
+            );
+            let r = |y: f64, h: f64| RECT {
+                left: left + px(10.0),
+                top: px(y),
+                right: left + width - px(9.0),
+                bottom: px(y + h),
+            };
+            if i < 3 {
+                if let Some((label, value, stale)) = cells.get(i) {
+                    let (main, reset) = value.split_once(" · ").unwrap_or((value.as_str(), ""));
+                    text(dc, fsmall, accent, label, r(12.0, 16.0));
+                    text(
+                        dc,
+                        flarge,
+                        if *stale { p.muted } else { p.text },
+                        main,
+                        r(29.0, 26.0),
+                    );
+                    text(
+                        dc,
+                        fsmall,
+                        p.muted,
+                        &format!("Reset {reset}"),
+                        r(57.0, 15.0),
+                    );
+                }
+            } else {
+                let label = if summary.updated_at.is_some() {
+                    format!("TOKENS · LAST {}", interval(summary.minutes).to_uppercase())
+                } else {
+                    "RECORDED ACTIVITY".into()
+                };
+                text(dc, fsmall, accent, &label, r(12.0, 16.0));
+                let value = if summary.updated_at.is_some() {
+                    format!(
+                        "{}{}",
+                        compact(summary.tokens),
+                        if summary.unknown_requests > 0 {
+                            "+"
+                        } else {
+                            ""
+                        }
+                    )
+                } else {
+                    "—".into()
+                };
+                text(dc, flarge, p.text, &value, r(29.0, 26.0));
+                text(
+                    dc,
+                    fsmall,
+                    p.muted,
+                    &summary.model_summary(None, 2),
+                    r(57.0, 15.0),
+                );
+            }
+        }
+    }
+    DeleteObject(fsmall);
+    DeleteObject(fmedium);
+    DeleteObject(flarge);
+}
+
+#[cfg(test)]
+mod render_tests {
+    use super::*;
+    use crate::dock::{DockModel, DockPrompt, DockSummary};
+    #[test]
+    fn native_renderer_handles_scaled_history_privacy_and_unknown_data() {
+        unsafe {
+            let models = vec![
+                DockModel {
+                    provider: "claude".into(),
+                    model: "Claude Sonnet".into(),
+                    effort: Some("high".into()),
+                    tokens: 184200,
+                    requests: 14,
+                },
+                DockModel {
+                    provider: "codex".into(),
+                    model: "GPT coding model".into(),
+                    effort: Some("medium".into()),
+                    tokens: 72000,
+                    requests: 8,
+                },
+            ];
+            let prompts = (0..20)
+                .map(|i| DockPrompt {
+                    id: i.to_string(),
+                    provider: if i % 2 == 0 { "claude" } else { "codex" }.into(),
+                    preview: [
+                        "Build the new search experience",
+                        "Review cache behavior and edge cases",
+                        "Explain the failing integration test",
+                        "Tighten the mobile navigation layout",
+                    ][i % 4]
+                        .into(),
+                    timestamp: Some(1788934000 - i as i64 * 120),
+                    tokens: if i == 4 {
+                        None
+                    } else {
+                        Some(12000 + i as u64 * 750)
+                    },
+                    models: if i % 2 == 0 {
+                        "Claude Sonnet · high"
+                    } else {
+                        "GPT coding model · medium"
+                    }
+                    .into(),
+                    status: "completed".into(),
+                    browser: i == 4,
+                })
+                .collect();
+            let summary = DockSummary {
+                updated_at: Some(chrono::Utc::now().timestamp()),
+                minutes: 60,
+                tokens: 256200,
+                unknown_requests: 0,
+                provider_tokens: std::collections::BTreeMap::from([
+                    ("claude".into(), 184200),
+                    ("codex".into(), 72000),
+                ]),
+                models,
+                prompts,
+            };
+            let cells = vec![
+                ("Claude · 5h".into(), "78% left · 3h 42m".into(), false),
+                ("Claude · week".into(), "64% left · 4d 6h".into(), false),
+                ("Codex · week".into(), "92% left · 5d 2h".into(), false),
+            ];
+            for (name, card, s, previews, index, small) in [
+                ("dock", false, 1.2, true, -1, false),
+                ("claude-hover", true, 1.2, true, 0, false),
+                ("codex-hover", true, 1.2, true, 2, false),
+                ("activity-hover", true, 1.2, true, 3, false),
+                ("private-hover", true, 1.6, false, 0, true),
+                ("small-font", false, 0.9, true, -1, false),
+                ("large-font", false, 1.6, true, -1, false),
+            ] {
+                HOVER.store(index, Ordering::Release);
+                SCROLL.store(0, Ordering::Release);
+                let w = (if card { 560.0 } else { 640.0 } * s) as i32;
+                let h = (if card {
+                    if small {
+                        390.0
+                    } else {
+                        590.0
+                    }
+                } else {
+                    84.0
+                } * s) as i32;
+                let dc = CreateCompatibleDC(null_mut());
+                let mut info: BITMAPINFO = std::mem::zeroed();
+                info.bmiHeader.biSize = size_of::<BITMAPINFOHEADER>() as u32;
+                info.bmiHeader.biWidth = w;
+                info.bmiHeader.biHeight = -h;
+                info.bmiHeader.biPlanes = 1;
+                info.bmiHeader.biBitCount = 32;
+                info.bmiHeader.biCompression = BI_RGB;
+                let mut bits = null_mut();
+                let bitmap = CreateDIBSection(dc, &info, DIB_RGB_COLORS, &mut bits, null_mut(), 0);
+                assert!(!bitmap.is_null());
+                let old = SelectObject(dc, bitmap);
+                draw_surface(
+                    dc,
+                    RECT {
+                        left: 0,
+                        top: 0,
+                        right: w,
+                        bottom: h,
+                    },
+                    palette(),
+                    s,
+                    card,
+                    &summary,
+                    previews,
+                    &cells,
+                );
+                GdiFlush();
+                let data = std::slice::from_raw_parts(bits as *const u8, (w * h * 4) as usize);
+                assert!(data.iter().filter(|&&v| v > 100).count() > 1000);
+                if let Some(out) = std::env::var_os("GCD_QA_OUTPUT_DIR") {
+                    let out = std::path::PathBuf::from(out);
+                    std::fs::create_dir_all(&out).unwrap();
+                    let mut file = vec![];
+                    file.extend_from_slice(b"BM");
+                    file.extend_from_slice(&(54 + data.len() as u32).to_le_bytes());
+                    file.extend_from_slice(&[0; 4]);
+                    file.extend_from_slice(&54u32.to_le_bytes());
+                    file.extend_from_slice(&40u32.to_le_bytes());
+                    file.extend_from_slice(&w.to_le_bytes());
+                    file.extend_from_slice(&(-h).to_le_bytes());
+                    file.extend_from_slice(&1u16.to_le_bytes());
+                    file.extend_from_slice(&32u16.to_le_bytes());
+                    file.extend_from_slice(&[0; 24]);
+                    file.extend_from_slice(data);
+                    std::fs::write(out.join(format!("{name}.bmp")), file).unwrap();
+                }
+                SelectObject(dc, old);
+                DeleteObject(bitmap);
+                DeleteDC(dc);
+            }
+            HOVER.store(-1, Ordering::Release);
+        }
+    }
+}
+unsafe extern "system" fn cardproc(window: HWND, msg: u32, w: WPARAM, l: LPARAM) -> LRESULT {
     match msg {
         WM_PAINT => {
-            paint(hwnd);
+            paint(window, true);
             0
         }
         WM_ERASEBKGND => 1,
         WM_MOUSEACTIVATE => MA_NOACTIVATE as isize,
-        WM_NCHITTEST => {
-            let mut rect: RECT = std::mem::zeroed();
-            GetWindowRect(hwnd, &mut rect);
-            let x = (lparam as u32 & 0xffff) as i16 as i32;
-            if !locked() && x - rect.left < (28.0 * display_scale(hwnd)).round() as i32 {
-                HTCAPTION as isize
+        WM_MOUSEWHEEL => {
+            let delta = ((w >> 16) as u16) as i16;
+            if delta < 0 {
+                SCROLL.fetch_add(1, Ordering::AcqRel);
             } else {
-                HTCLIENT as isize
-            }
-        }
-        WM_LBUTTONUP | WM_CONTEXTMENU => {
-            if let Some(app) = APP.get() {
-                let a = app.clone();
-                let _ = app.run_on_main_thread(move || {
-                    let _ = super::show_dashboard(&a);
+                let _ = SCROLL.fetch_update(Ordering::AcqRel, Ordering::Acquire, |n| {
+                    Some(n.saturating_sub(1))
                 });
             }
+            InvalidateRect(window, null(), 0);
             0
         }
-        WM_EXITSIZEMOVE => {
-            let mut rect: RECT = std::mem::zeroed();
-            GetWindowRect(hwnd, &mut rect);
-            position_window(hwnd, Some((rect.left, rect.top)));
-            GetWindowRect(hwnd, &mut rect);
-            if !locked() {
-                if let Some(app) = APP.get() {
-                    crate::save_strip_position(app, rect.left, rect.top);
-                }
-            }
+        WM_LBUTTONUP => {
+            open_dashboard();
             0
         }
         WM_DPICHANGED => {
-            let rect = &*(lparam as *const RECT);
-            position_window(hwnd, Some((rect.left, rect.top)));
-            InvalidateRect(hwnd, null(), 0);
+            show_card();
+            0
+        }
+        _ => DefWindowProcW(window, msg, w, l),
+    }
+}
+unsafe extern "system" fn wndproc(window: HWND, msg: u32, w: WPARAM, l: LPARAM) -> LRESULT {
+    match msg {
+        WM_PAINT => {
+            paint(window, false);
+            0
+        }
+        WM_ERASEBKGND => 1,
+        WM_MOUSEACTIVATE => MA_NOACTIVATE as isize,
+        WM_LBUTTONDOWN => {
+            hide_card();
+            let mut p: POINT = std::mem::zeroed();
+            GetCursorPos(&mut p);
+            pointer().press = Some((p, window_rect(window), false));
+            SetCapture(window);
+            0
+        }
+        WM_MOUSEMOVE => {
+            let mut p: POINT = std::mem::zeroed();
+            GetCursorPos(&mut p);
+            let movement = {
+                let mut state = pointer();
+                if let Some((start, r, dragged)) = state.press.as_mut() {
+                    if let Some(origin) = drag_origin(
+                        (start.x, start.y),
+                        (p.x, p.y),
+                        (r.left, r.top),
+                        locked(),
+                        *dragged,
+                    ) {
+                        *dragged = true;
+                        Some(origin)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            };
+            if let Some((x, y)) = movement {
+                SetWindowPos(
+                    window,
+                    HWND_TOPMOST,
+                    x,
+                    y,
+                    0,
+                    0,
+                    SWP_NOSIZE | SWP_NOACTIVATE,
+                );
+            } else if pointer().press.is_none() {
+                SetTimer(window, HOVER_TIMER, 80, None);
+                hover_tick();
+            }
+            0
+        }
+        WM_LBUTTONUP => {
+            let press = pointer().press.take();
+            ReleaseCapture();
+            if press.is_some_and(|(_, _, dragged)| dragged) {
+                save_position();
+            } else if press.is_some() {
+                open_dashboard();
+            }
+            0
+        }
+        WM_CAPTURECHANGED => {
+            let press = pointer().press.take();
+            if press.is_some_and(|(_, _, dragged)| dragged) {
+                save_position();
+            }
+            0
+        }
+        WM_CONTEXTMENU => {
+            open_dashboard();
+            0
+        }
+        WM_TIMER if w == HOVER_TIMER => {
+            hover_tick();
+            0
+        }
+        WM_DPICHANGED => {
+            hide_card();
+            let r = &*(l as *const RECT);
+            position_window(window, Some((r.left, r.top)));
+            InvalidateRect(window, null(), 0);
             0
         }
         WM_DISPLAYCHANGE | WM_SETTINGCHANGE => {
-            let mut rect: RECT = std::mem::zeroed();
-            GetWindowRect(hwnd, &mut rect);
-            position_window(hwnd, Some((rect.left, rect.top)));
-            InvalidateRect(hwnd, null(), 0);
+            hide_card();
+            let r = window_rect(window);
+            position_window(window, Some((r.left, r.top)));
+            InvalidateRect(window, null(), 0);
             0
         }
         WM_POWERBROADCAST => {
-            if wparam == 7 || wparam == 18 {
-                if let Some(app) = APP.get() {
-                    crate::request_refresh(app);
+            if w == 7 || w == 18 {
+                if let Some(a) = APP.get() {
+                    crate::request_refresh(a);
                 }
             }
             1
         }
         SETTINGS_CHANGED => {
-            position_window(hwnd, APP.get().and_then(crate::strip_position));
-            InvalidateRect(hwnd, null(), 0);
+            hide_card();
+            position_window(window, APP.get().and_then(crate::strip_position));
+            InvalidateRect(window, null(), 0);
             0
         }
         REPAINT => {
-            InvalidateRect(hwnd, null(), 0);
+            InvalidateRect(window, null(), 0);
+            if !popup().is_null() && IsWindowVisible(popup()) != 0 {
+                InvalidateRect(popup(), null(), 0);
+            }
             0
         }
         WM_CLOSE => {
-            DestroyWindow(hwnd);
+            hide_card();
+            if !popup().is_null() {
+                DestroyWindow(popup());
+                POPUP.store(0, Ordering::Release);
+            }
+            DestroyWindow(window);
             0
         }
         WM_DESTROY => {
@@ -420,6 +1051,6 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: 
             PostQuitMessage(0);
             0
         }
-        _ => DefWindowProcW(hwnd, msg, wparam, lparam),
+        _ => DefWindowProcW(window, msg, w, l),
     }
 }

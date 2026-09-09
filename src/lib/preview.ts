@@ -31,6 +31,8 @@ const settings: AppSettings = {
   meterDisplay: "remaining",
   stripLocked: false,
   fontScale: 120,
+  dockMinutes: 60,
+  dockPreviews: true,
 };
 const prompts = [
   "Add keyboard navigation to the command palette and preserve the selected item.",

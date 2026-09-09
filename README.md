@@ -4,11 +4,13 @@ A lightweight desktop companion with usage meters, searchable prompt history, sh
 
 ## Display
 
-- **Windows 11:** a native strip you can drag anywhere in the desktop work area. Lock its position in Settings if desired. It does not modify the Windows taskbar.
+- **Windows 11:** a native rounded dock with colored usage cards. Drag anywhere on the dock to move it; click to open the dashboard. Hover a meter to see its last 10 recorded prompts above the dock. It does not modify the Windows taskbar.
 - **macOS:** compact menu-bar usage meters.
 - **Dashboard:** Overview, History, Browser chats, Model advice, and Settings. Closing the dashboard releases its browser while the native meters keep running.
 
 The default is a black theme, percentage **left**, and 120% text size. Settings offers five themes, percentage used instead, and text sizes from 90% to 160%. Native macOS menu-bar appearance follows macOS. Stale readings are marked; unavailable readings show an em dash and missing reset times show N/A.
+
+The Windows activity card shows logged tokens and recent models for the last hour by default. Change its duration in Settings using a preset or 1–43,200 minutes. Hover cards show prompt previews, model/reasoning, time, status, and lifetime logged tokens. Both Claude meters share the same latest Claude history. Totals cover local and synchronized activity; imported browser tokens remain unknown. You can hide hover previews in Settings. Hover cards scroll when the screen cannot fit all ten prompts.
 
 ## Install and set up
 

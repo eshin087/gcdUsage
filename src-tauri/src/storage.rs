@@ -1,4 +1,6 @@
 //! Local, versioned storage. Provider logs and credentials are never written here.
+#[path = "dock_storage.rs"]
+mod dock_storage;
 #[path = "metrics.rs"]
 mod metrics;
 use crate::models::*;

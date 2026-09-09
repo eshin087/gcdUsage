@@ -1,5 +1,6 @@
 mod app;
 pub mod browser_history;
+pub mod dock;
 pub mod history;
 pub mod models;
 mod platform;

@@ -1235,8 +1235,8 @@
             {#if isWindows}<label class="toggle-row"
                 ><span
                   ><strong>Lock strip position</strong><small
-                    >Prevent accidental movement. Off by default; drag the grip
-                    at the left end to move the strip.</small
+                    >Prevent accidental movement. Off by default; drag anywhere
+                    on the dock to move it. Click to open the dashboard.</small
                   ></span
                 ><input
                   type="checkbox"
@@ -1244,6 +1244,64 @@
                   onchange={() => (dirty = true)}
                 /><span class="switch" aria-hidden="true"></span></label
               >{/if}
+            {#if isWindows}
+              <label class="form-field"
+                >Dock activity interval
+                <select
+                  aria-label="Dock activity interval"
+                  value={[30, 60, 360, 1440, 10080].includes(
+                    settings.dockMinutes,
+                  )
+                    ? settings.dockMinutes
+                    : "custom"}
+                  onchange={(event) => {
+                    const value = event.currentTarget.value;
+                    if (value !== "custom")
+                      settings!.dockMinutes = Number(value);
+                    else settings!.dockMinutes = 90;
+                    dirty = true;
+                  }}
+                >
+                  <option value="30">Last 30 minutes</option><option value="60"
+                    >Last hour</option
+                  ><option value="360">Last 6 hours</option><option value="1440"
+                    >Last 24 hours</option
+                  ><option value="10080">Last 7 days</option><option
+                    value="custom">Custom duration</option
+                  >
+                </select>
+              </label>
+              <label class="form-field"
+                >Custom dock duration (minutes)
+                <input
+                  aria-label="Custom dock duration (minutes)"
+                  type="number"
+                  min="1"
+                  max="43200"
+                  step="1"
+                  bind:value={settings.dockMinutes}
+                  oninput={() => (dirty = true)}
+                />
+              </label>
+              <label class="toggle-row"
+                ><span
+                  ><strong>Show prompt previews on hover</strong><small
+                    >Hover each meter for its last 10 prompts. Token and model
+                    totals use the selected interval; the latest prompts are
+                    shown regardless of date.</small
+                  ></span
+                ><input
+                  type="checkbox"
+                  bind:checked={settings.dockPreviews}
+                  onchange={() => (dirty = true)}
+                /><span class="switch" aria-hidden="true"></span></label
+              >
+              <p class="fineprint">
+                Recorded activity includes all local and synced computers.
+                Browser imports have unknown token usage. Dock activity
+                refreshes after imports and at least once a minute.
+              </p>
+            {/if}
             <p class="fineprint">
               Theme applies to the dashboard and Windows strip. macOS menu-bar
               colors and text size follow the system. The Windows strip is a
