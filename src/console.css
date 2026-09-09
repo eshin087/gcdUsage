@@ -1,0 +1,52 @@
+/* Static surfaces, no resident canvas, shaders, blur or animation loop. */
+:root:not([data-theme="light"]):not([data-theme="slate"]):not([data-theme="midnight"]) {
+ --bg:#05070d; --surface:#101521; --sidebar:#090d16; --ink:#f2f6ff; --muted:#a7b5cb;
+ --faint:#95a4bc; --line:#293347; --accent:#73dfff; --accent-soft:#122d3b;
+ --button-bg:#335972; --nav-bg:#132536; --nav-ink:#95eaff; --shadow:0 10px 32px #00000025;
+}
+.app-shell {background:radial-gradient(ellipse at 80% 0%,#4264ac12,transparent 48%),var(--bg)}
+.sidebar {padding-top:24px;border-right:1px solid var(--line)}
+.brand-mark {width:44px;height:44px;flex-shrink:0}
+.brand {gap:10px;font-size:1.23rem;letter-spacing:-.04em}
+.workspace-label {margin-top:30px;font-size:.67rem;letter-spacing:.14em;color:var(--accent)}
+.sidebar nav {gap:8px}
+.sidebar nav button {border:1px solid transparent;border-radius:12px;padding:13px 11px}
+.sidebar nav button.active {border-color:var(--line);box-shadow:inset 3px 0 var(--accent)}
+main {padding:32px;max-width:1600px}
+.page-header {padding-bottom:24px;border-bottom:1px solid var(--line);margin-bottom:24px}
+h1 {font-size:2.05rem;font-weight:650;letter-spacing:-.045em}
+.eyebrow {color:var(--accent);letter-spacing:.13em}
+.panel,.quota-card {border-radius:18px;border:1px solid var(--line);box-shadow:var(--shadow)}
+.panel-heading {padding-bottom:20px}
+.quota-grid {gap:16px;grid-template-columns:repeat(auto-fit,minmax(min(100%,270px),1fr))}
+.quota-card {background:linear-gradient(145deg,var(--surface),var(--bg));padding:24px}
+.quota-value {font-variant-numeric:tabular-nums;letter-spacing:-.05em}
+.quota-track {height:6px;border-radius:9px}
+.stats-grid {gap:12px;background:transparent;border:0;padding:0}
+.stat-item {border:1px solid var(--line)!important;border-radius:14px;background:var(--surface);padding:20px}
+.stat-item>strong {font-size:1.7rem;letter-spacing:-.03em}
+.button {border-radius:10px;min-height:40px}
+input,select {min-height:40px;border-radius:9px}
+.prompt-context {color:var(--accent);font-size:.78rem;margin-bottom:7px;line-height:1.5;overflow-wrap:anywhere}
+.prompt-context span {color:var(--faint)}
+.prompt-link {background:none;border:0;padding:0;text-align:left;color:var(--ink);font-size:1rem;line-height:1.6;white-space:normal;cursor:pointer;overflow-wrap:anywhere}
+.prompt-link:hover {color:var(--accent);text-decoration:underline;text-underline-offset:4px}
+.history-table td {padding-top:20px;padding-bottom:20px;vertical-align:top}
+.prompt-preview {max-width:100%;white-space:normal;-webkit-line-clamp:3}
+.row-meta,.cell-note,.model-name,.effort-chip {font-size:.77rem;line-height:1.55}
+.row-meta {margin-top:8px;flex-wrap:wrap;white-space:normal}
+.prompt-modal {width:min(760px,92vw);max-height:88vh;overflow:auto;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:22px;padding:28px;box-shadow:0 24px 90px #0009}
+.prompt-modal::backdrop {background:#02050bcc}
+.modal-heading {display:flex;align-items:start;justify-content:space-between;gap:18px}
+.modal-heading h2 {font-size:1.35rem;margin-top:10px;overflow-wrap:anywhere}
+.context-ribbon {display:flex;flex-wrap:wrap;gap:16px;color:var(--accent);font-size:.85rem;margin:22px 0}
+.detail-preview {font-size:1.15rem;line-height:1.7;padding:20px;background:var(--bg);border-radius:13px;white-space:pre-wrap;overflow-wrap:anywhere}
+.detail-metrics {display:flex;gap:36px;margin:22px 0}
+.detail-metrics>div {display:grid;gap:5px}.detail-metrics strong {font-size:1.6rem}
+.detail-models {line-height:1.7;color:var(--muted);margin-bottom:20px}
+.prompt-modal details {margin-bottom:20px}.prompt-modal label {display:grid;gap:6px;margin-top:12px;font-size:.8rem}
+.prompt-modal input {width:100%;font-size:.8rem}.modal-actions {display:flex;justify-content:flex-end;gap:10px;margin-top:24px}
+.filters {grid-template-columns:repeat(auto-fit,minmax(min(100%,150px),1fr))}
+.filters label,.filters input,.filters select {min-width:0;width:100%}
+main,.panel,.stats-grid {min-width:0}
+@media(max-width:1000px){main{padding:24px}.app-shell{grid-template-columns:190px minmax(0,1fr)}.brand{font-size:1rem}.brand-mark{width:35px;height:35px}}

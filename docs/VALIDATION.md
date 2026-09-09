@@ -1,5 +1,14 @@
 # Validation
 
+Version 0.4.0 adds the Fable scoped weekly allowance, contextual prompt details, direct native dock duration controls, a new GCD identity and a larger dashboard. Local checks pass 80 Rust tests, 13 frontend tests, and Svelte/TypeScript validation. The live Claude response was checked for the explicitly labeled Fable window; missing general limits are never substituted with that scoped allowance.
+
+Synthetic native tests cover 36 prompts across multiple projects, wrapper cleanup, captured-details navigation, rejected invalid identifiers, and the 18 px default dashboard font. History filters fit the default window without horizontal overflow. Actual native drawing tests cover five dock cards, ten-row context, unavailable values, privacy mode, restricted screen space and several font scales. Screenshots use synthetic data only.
+
+The Windows x64 0.4.0 installer built successfully at approximately 2.7 MB. Native dock totals matched independent SQLite calculations across seven interval changes; invalid durations were rejected, preview settings persisted, and closing the dashboard removed its webview. The final executable passed context/detail regression and command, external-document navigation, and popup isolation checks. A speculative request may occur before native navigation cancellation; this is document isolation, not an outbound firewall.
+
+The six-page PDF manual was rendered and visually reviewed on every page. The dependency review is documented in [Security review](SECURITY_REVIEW.md), including remaining upstream maintenance notices and the unsupported Linux-only advisory. The npm audit reports no known advisories.
+
+Interactive checks of the new native duration menu, clickable hover rows, physical mixed-DPI monitors and macOS sign-in remain device checks; automated drawing and command tests do not substitute for those interactions. Historical release results below are not claims that the new version has passed the same platform checks.
 Version 0.3.0 adds the Windows native activity dock and prompt hover cards, with a one-hour default interval and configurable duration. Local checks pass 74 Rust tests, 12 frontend tests, and Svelte/TypeScript validation. Native rendering tests cover multiple font scales, ten-row history, restricted screen space, hidden previews, and unavailable data. Geometry tests cover hover delay, pointer travel into the popup, scrolling layout, drag thresholds, and monitor bounds.
 
 Version 0.3.0 platform tests and package builds completed for Windows x64/ARM64 and macOS Intel/Apple Silicon; both macOS background-launch checks passed. The release contains all four packages and verified SHA-256 checksums. The installed Windows app used approximately 39–45 MB with its dashboard closed, and its history database passed an integrity check after cleanup.

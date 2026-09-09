@@ -32,22 +32,32 @@ pub fn cells(
     [
         (Provider::Claude, 300, "Claude · 5h"),
         (Provider::Claude, 10080, "Claude · week"),
+        (Provider::Claude, 10080, "Claude · Fable"),
         (Provider::Codex, 10080, "Codex · week"),
     ]
     .iter()
     .map(|(provider, duration, label)| {
         let snapshot = snapshots.iter().find(|s| s.provider == *provider);
-        let general_id = format!("{}:{}", provider.key(), duration);
+        let fable = *label == "Claude · Fable";
+        let general_id = if fable {
+            "claude-fable:10080".into()
+        } else {
+            format!("{}:{}", provider.key(), duration)
+        };
         let window = snapshot.and_then(|s| {
             s.windows.iter().find(|w| w.id == general_id).or_else(|| {
-                s.windows.iter().find(|w| {
-                    w.duration_minutes == *duration
-                        && !w.id.contains("spark")
-                        && !w.id.contains("sonnet")
-                        && !w.id.contains("opus")
-                        && !w.id.contains("fable")
-                        && !w.id.contains("bengalfox")
-                })
+                if fable {
+                    None
+                } else {
+                    s.windows.iter().find(|w| {
+                        w.duration_minutes == *duration
+                            && !w.id.contains("spark")
+                            && !w.id.contains("sonnet")
+                            && !w.id.contains("opus")
+                            && !w.id.contains("fable")
+                            && !w.id.contains("bengalfox")
+                    })
+                }
             })
         });
         match (snapshot, window) {
@@ -109,7 +119,7 @@ pub fn update(app: &AppHandle, snapshots: &[QuotaSnapshot]) {
         {
             let title = cells
                 .iter()
-                .zip(["C5", "CW", "OW"])
+                .zip(["C5", "CW", "CF", "OW"])
                 .map(|((_, value, _), label)| {
                     format!(
                         "{label} {}",

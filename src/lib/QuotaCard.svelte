@@ -11,7 +11,7 @@
   } from "./format";
   import Icon from "./Icon.svelte";
   export let provider: Provider;
-  export let period: "five_hour" | "weekly";
+  export let period: "five_hour" | "weekly" | "fable";
   export let snapshot: QuotaSnapshot | undefined;
   export let now: number;
   export let display: MeterDisplay = "remaining";
@@ -45,14 +45,14 @@
       ><span class="status-dot"></span>{statusText}</span
     >
   </div>
-  <h2>{period === "five_hour" ? "Five-hour limit" : "Weekly limit"}</h2>
+  <h2>{period === "five_hour" ? "Five-hour limit" : period === "fable" ? "Fable weekly limit" : "Weekly limit"}</h2>
   <div class="quota-value">
     {percent(value)}<span>{value == null ? "No reading yet" : unit}</span>
   </div>
   <div
     class="quota-track"
     role="progressbar"
-    aria-label={`${providerName(provider)} ${period === "five_hour" ? "five-hour" : "weekly"} ${unit}`}
+    aria-label={`${providerName(provider)} ${period === "five_hour" ? "five-hour" : period === "fable" ? "Fable weekly" : "weekly"} ${unit}`}
     aria-valuemin="0"
     aria-valuemax="100"
     aria-valuenow={value ?? undefined}

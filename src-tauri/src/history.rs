@@ -19,6 +19,8 @@ const MAX_LINE: usize = 16 * 1024 * 1024;
 #[derive(Default, Serialize, Deserialize)]
 #[serde(default)]
 struct ParserState {
+    project: Option<String>,
+    chat_title: Option<String>,
     session: String,
     turn: String,
     root_turn: Option<String>,
@@ -126,6 +128,10 @@ fn import_file(
     let identity = stable_id(&[provider.key(), &String::from_utf8_lossy(&first)]);
     let key = path.to_string_lossy();
     let checkpoint = store.checkpoint(&key)?;
+    // Enrich previously imported files without changing their token/account history.
+    if checkpoint.is_some() {
+        store.enrich_file(path, provider, &identity)?;
+    }
     let (mut offset, mut state) = match checkpoint {
         Some((offset, saved_identity, state)) if saved_identity == identity && offset <= length => {
             (
@@ -258,7 +264,7 @@ fn timestamp(value: &Value) -> i64 {
 fn event_time(v: &Value) -> i64 {
     timestamp(&v["timestamp"])
 }
-fn content_text(value: &Value) -> String {
+pub(crate) fn content_text(value: &Value) -> String {
     if let Some(s) = value.as_str() {
         return s.into();
     }
@@ -273,7 +279,7 @@ fn content_text(value: &Value) -> String {
         })
         .unwrap_or_default()
 }
-fn is_context_only(s: &str) -> bool {
+pub(crate) fn is_context_only(s: &str) -> bool {
     let s = s.trim_start();
     [
         "<environment_context>",
@@ -330,6 +336,8 @@ fn create_prompt(
     let origin = explicit_id.unwrap_or_else(|| format!("{turn}:{content_hash}"));
     let id = stable_id(&[provider.key(), &state.account, "prompt", &origin]);
     let prompt = PromptRecord {
+        project: state.project.clone(),
+        chat_title: state.chat_title.clone(),
         id: id.clone(),
         provider,
         account_id: state.account.clone(),
@@ -337,7 +345,7 @@ fn create_prompt(
         session_id: state.session.clone(),
         turn_id: turn,
         timestamp: time,
-        preview: body.chars().take(160).collect(),
+        preview: crate::presentation::clean_preview(body),
         status: "in_progress".into(),
         completed_at: None,
         kind: state.kind.unwrap_or(ActivityKind::User),
@@ -377,6 +385,12 @@ fn parse_codex(
     let time = event_time(v);
     match v["type"].as_str().unwrap_or("") {
         "session_meta" => {
+            state.project = p["cwd"]
+                .as_str()
+                .and_then(crate::presentation::project_name);
+            state.chat_title = p["title"]
+                .as_str()
+                .map(|s| crate::presentation::plain(s, 120));
             state.session = text(&p["id"])
                 .or_else(|| text(&p["session_id"]))
                 .unwrap_or_else(|| stable_id(&[&time.to_string(), "codex-session"]));
@@ -386,6 +400,12 @@ fn parse_codex(
             ])));
         }
         "turn_context" => {
+            if let Some(project) = p["cwd"]
+                .as_str()
+                .and_then(crate::presentation::project_name)
+            {
+                state.project = Some(project);
+            }
             if let Some(turn) = text(&p["turn_id"]) {
                 if state.turn != turn {
                     state.current_prompt = None;
@@ -529,6 +549,15 @@ fn parse_claude(
     offset: u64,
     report: &mut ImportReport,
 ) -> Result<(), String> {
+    if let Some(project) = v["cwd"]
+        .as_str()
+        .and_then(crate::presentation::project_name)
+    {
+        state.project = Some(project);
+    }
+    if let Some(title) = v["customTitle"].as_str() {
+        state.chat_title = Some(crate::presentation::plain(title, 120));
+    }
     if let Some(session) = text(&v["sessionId"]) {
         state.session = session;
     }

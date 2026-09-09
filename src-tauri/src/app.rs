@@ -33,6 +33,7 @@ pub struct AppState {
     sync_message: Mutex<Option<String>>,
     sync_health: Mutex<sync::SyncHealth>,
     dock: RwLock<crate::dock::DockSummary>,
+    pending_prompt: Mutex<Option<String>>,
     watcher: Mutex<Option<RecommendedWatcher>>,
 }
 fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -103,6 +104,61 @@ fn get_overview(state: tauri::State<'_, AppState>) -> Overview {
         sync_message,
         sync_health,
     }
+}
+
+pub(crate) fn activate_prompt(app: &tauri::AppHandle, id: String) {
+    *lock(&app.state::<AppState>().pending_prompt) = Some(id);
+    let a = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        let _ = platform::show_dashboard(&a);
+        let _ = a.emit("prompt-selected", ());
+    });
+}
+#[tauri::command]
+fn take_pending_prompt(state: tauri::State<'_, AppState>) -> Option<String> {
+    lock(&state.pending_prompt).take()
+}
+#[tauri::command]
+async fn get_prompt_detail(
+    app: tauri::AppHandle,
+    id: String,
+) -> Result<crate::navigation::PromptDetail, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        lock(&app.state::<AppState>().store).prompt_detail(&id)
+    })
+    .await
+    .map_err(|_| "History worker stopped".to_string())?
+}
+#[tauri::command]
+async fn open_original_prompt(app: tauri::AppHandle, id: String) -> Result<bool, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let detail = lock(&app.state::<AppState>().store).prompt_detail(&id)?;
+        if let Some(url) = detail.original_url {
+            crate::navigation::launch_original(&url)?;
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    })
+    .await
+    .map_err(|_| "Navigation worker stopped".to_string())?
+}
+pub(crate) fn set_dock_minutes(app: &tauri::AppHandle, minutes: u32) -> Result<(), String> {
+    if !(1..=43200).contains(&minutes) {
+        return Err("Use 1 to 43200 minutes".into());
+    }
+    let state = app.state::<AppState>();
+    {
+        let mut settings = lock(&state.settings);
+        let mut next = settings.clone();
+        next.dock_minutes = minutes;
+        persist(&state.settings_path, &next)?;
+        *settings = next;
+    }
+    *state.dock.write().unwrap() = crate::dock::DockSummary::default();
+    state.dirty.store(true, Ordering::Release);
+    let _ = app.emit("settings-updated", ());
+    Ok(())
 }
 #[tauri::command]
 async fn get_history(app: tauri::AppHandle, filter: HistoryFilter) -> Result<HistoryPage, String> {
@@ -674,7 +730,10 @@ pub fn run() {
             get_signin_status,
             signin_input,
             get_browser_history,
-            import_browser_history
+            import_browser_history,
+            take_pending_prompt,
+            get_prompt_detail,
+            open_original_prompt
         ])
         .setup(|app| {
             #[cfg(target_os = "macos")]
@@ -732,6 +791,7 @@ pub fn run() {
                 sync_message: Mutex::new(None),
                 sync_health: Mutex::new(sync::SyncHealth::default()),
                 dock: RwLock::new(crate::dock::DockSummary::default()),
+                pending_prompt: Mutex::new(None),
                 watcher: Mutex::new(None),
             });
             app.manage(crate::signin::SignIns::default());
@@ -763,18 +823,7 @@ pub fn run() {
                     )?,
                 ],
             )?;
-            let mut rgba = vec![0u8; 32 * 32 * 4];
-            for y in 0..32 {
-                for x in 0..32 {
-                    let offset = (y * 32 + x) * 4;
-                    let bar = (7..11).contains(&x) && (16..25).contains(&y)
-                        || (14..18).contains(&x) && (8..25).contains(&y)
-                        || (21..25).contains(&x) && (12..25).contains(&y);
-                    if bar {
-                        rgba[offset..offset + 4].copy_from_slice(&[109, 174, 137, 255]);
-                    }
-                }
-            }
+            let rgba = include_bytes!("../icons/tray.rgba").to_vec();
             tauri::tray::TrayIconBuilder::with_id("usage")
                 .icon(tauri::image::Image::new_owned(rgba, 32, 32))
                 .menu(&menu)

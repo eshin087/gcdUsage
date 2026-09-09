@@ -30,6 +30,8 @@ export interface TokenUsage {
   reasoning: number | null;
 }
 export interface PromptRecord {
+  project?: string | null;
+  chatTitle?: string | null;
   id: string;
   provider: Provider;
   accountId: string;
@@ -217,6 +219,8 @@ export interface SignInProgress {
   message: string;
 }
 export interface BrowserPrompt {
+  conversationId: string;
+  chatTitle?: string | null;
   id: string;
   provider: string;
   accountLabel: string;

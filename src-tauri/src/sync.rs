@@ -412,6 +412,7 @@ mod tests {
         let mut a = Store::open(Path::new(":memory:")).unwrap();
         let mut b = Store::open(Path::new(":memory:")).unwrap();
         let row = crate::browser_history::BrowserPrompt {
+            chat_title: None,
             id: stable_id(&["browser", "chatgpt", "account", "conversation", "message"]),
             provider: "chatgpt".into(),
             account_id: "account".into(),
@@ -460,6 +461,8 @@ mod tests {
         let mut a = Store::open(Path::new(":memory:")).unwrap();
         let mut b = Store::open(Path::new(":memory:")).unwrap();
         let prompt = PromptRecord {
+            project: None,
+            chat_title: None,
             id: "p".into(),
             provider: Provider::Claude,
             account_id: "account-a".into(),

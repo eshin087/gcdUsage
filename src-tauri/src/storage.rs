@@ -1,6 +1,10 @@
 //! Local, versioned storage. Provider logs and credentials are never written here.
+#[path = "details.rs"]
+mod details;
 #[path = "dock_storage.rs"]
 mod dock_storage;
+#[path = "enrichment.rs"]
+mod enrichment;
 #[path = "metrics.rs"]
 mod metrics;
 use crate::models::*;
@@ -38,10 +42,19 @@ pub enum SyncEvent {
 }
 
 pub(crate) fn validate_measurements(event: &SyncEvent) -> Result<(), String> {
+    let label = |s: &Option<String>, n: usize| {
+        s.as_ref()
+            .is_none_or(|s| s.chars().count() <= n && !s.chars().any(char::is_control))
+    };
     let time = |value: i64| (0..=253_402_300_799).contains(&value);
     let valid = match event {
         SyncEvent::BrowserPrompt(p) => return p.validate(),
-        SyncEvent::Prompt(p) => time(p.timestamp) && p.completed_at.is_none_or(time),
+        SyncEvent::Prompt(p) => {
+            time(p.timestamp)
+                && p.completed_at.is_none_or(time)
+                && label(&p.project, 80)
+                && label(&p.chat_title, 120)
+        }
         SyncEvent::Request(r) => {
             time(r.timestamp)
                 && [
@@ -156,6 +169,7 @@ impl Store {
             // Restore consistency without changing record identity or token data.
             connection.execute_batch("BEGIN; UPDATE prompts SET data=json_set(data,'$.timestamp',timestamp,'$.sessionId',session_id) WHERE json_extract(data,'$.timestamp')!=timestamp OR json_extract(data,'$.sessionId')!=session_id; UPDATE requests SET data=json_set(data,'$.timestamp',timestamp,'$.sessionId',session_id) WHERE json_extract(data,'$.timestamp')!=timestamp OR json_extract(data,'$.sessionId')!=session_id; PRAGMA user_version=2; COMMIT;").map_err(|e|e.to_string())?;
         }
+        connection.execute_batch("CREATE TABLE IF NOT EXISTS enriched_files(path TEXT PRIMARY KEY, identity TEXT NOT NULL); CREATE INDEX IF NOT EXISTS prompts_provider_time ON prompts(provider,kind,timestamp DESC); CREATE INDEX IF NOT EXISTS requests_identity_prompt ON requests(prompt_id,provider,account_id);").map_err(|e|e.to_string())?;
         Ok(Self { connection })
     }
 
@@ -245,22 +259,35 @@ impl Store {
         let mut normalized = event.clone();
         match &mut normalized {
             SyncEvent::BrowserPrompt(p) => {
+                p.preview = crate::presentation::clean_preview(&p.preview);
                 if let Some(prior) = self.read_one::<crate::browser_history::BrowserPrompt>(
                     "SELECT data FROM browser_prompts WHERE id=?1",
                     &p.id,
                 )? {
+                    if prior.account_id != p.account_id || prior.provider != p.provider {
+                        return Err("Conflicting browser record identity".into());
+                    }
                     p.timestamp = prior.timestamp.or(p.timestamp);
+                    p.chat_title = p.chat_title.clone().or(prior.chat_title);
                 }
             }
             SyncEvent::Prompt(p) => {
-                p.preview = p.preview.chars().take(160).collect();
+                p.preview = crate::presentation::clean_preview(&p.preview);
                 if let Some(prior) = self.prompt(&p.id)? {
+                    if prior.account_id != p.account_id || prior.provider != p.provider {
+                        return Err("Conflicting prompt identity".into());
+                    }
+                    p.project = p.project.clone().or(prior.project);
+                    p.chat_title = p.chat_title.clone().or(prior.chat_title);
                     p.timestamp = prior.timestamp;
                     p.session_id = prior.session_id;
                 }
             }
             SyncEvent::Request(r) => {
                 if let Some(prior) = self.request(&r.id)? {
+                    if prior.account_id != r.account_id || prior.provider != r.provider {
+                        return Err("Conflicting request identity".into());
+                    }
                     r.timestamp = prior.timestamp;
                     r.session_id = prior.session_id;
                 }
@@ -983,6 +1010,8 @@ pub(crate) mod tests {
     use super::*;
     pub fn prompt() -> PromptRecord {
         PromptRecord {
+            project: None,
+            chat_title: None,
             id: "p1".into(),
             provider: Provider::Codex,
             account_id: "account".into(),

@@ -48,6 +48,11 @@ describe("measured usage display", () => {
     expect(quotaWindow(snapshot, "weekly")?.id).toBe("primary");
     expect(quotaWindow(snapshot, "five_hour")?.id).toBe("secondary");
   });
+  it("never substitutes a scoped Claude limit for its general weekly allowance", () => {
+    const snapshot = {provider:"claude", windows:[{id:"claude-fable:10080", durationMinutes:10080, usedPercent:18}]} as QuotaSnapshot;
+    expect(quotaWindow(snapshot,"weekly")).toBeUndefined();
+    expect(quotaWindow(snapshot,"fable")?.usedPercent).toBe(18);
+  });
   it("marks old and reset readings stale", () => {
     const window = {
       id: "week",

@@ -81,8 +81,10 @@ export const shortDate = (date: string): string =>
   });
 export function quotaWindow(
   snapshot: QuotaSnapshot | undefined,
-  period: "five_hour" | "weekly",
+  period: "five_hour" | "weekly" | "fable",
 ): QuotaWindow | undefined {
+  if (period === "fable") return snapshot?.windows.find(w => w.id === "claude-fable:10080");
+  if (snapshot?.provider === "claude") return snapshot.windows.find(w => w.id === `claude:${period === "five_hour" ? 300 : 10080}`);
   return snapshot?.windows.find((window) =>
     period === "five_hour"
       ? window.durationMinutes === 300

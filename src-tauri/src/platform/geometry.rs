@@ -53,8 +53,8 @@ pub fn drag_origin(
 pub fn dock_cell(x: i32, width: i32, scale: f64) -> usize {
     let inset = (7.0 * scale).round() as i32;
     let gap = (5.0 * scale).round() as i32;
-    let cell_width = ((width - inset * 2 - gap * 3) / 4).max(1);
-    ((x - inset).max(0) / (cell_width + gap).max(1)).min(3) as usize
+    let cell_width = ((width - inset * 2 - gap * 4) / 5).max(1);
+    ((x - inset).max(0) / (cell_width + gap).max(1)).min(4) as usize
 }
 
 pub fn popup_origin(dock: Rect, work: Rect, size: (i32, i32), gap: i32) -> (i32, i32) {
@@ -171,12 +171,12 @@ mod tests {
         );
     }
     #[test]
-    fn scaled_dock_hit_testing_matches_four_card_layout() {
+    fn scaled_dock_hit_testing_matches_five_card_layout() {
         for s in [0.9, 1.2, 1.6, 2.4] {
-            let width = (640.0 * s) as i32;
-            for i in 0..4 {
+            let width = (800.0 * s) as i32;
+            for i in 0..5 {
                 assert_eq!(
-                    dock_cell((width as f64 * (i as f64 + 0.5) / 4.0) as i32, width, s),
+                    dock_cell((width as f64 * (i as f64 + 0.5) / 5.0) as i32, width, s),
                     i
                 )
             }

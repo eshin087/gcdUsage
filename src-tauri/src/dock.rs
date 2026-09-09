@@ -13,6 +13,7 @@ pub struct DockModel {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DockPrompt {
+    pub context: String,
     pub id: String,
     pub provider: String,
     pub preview: String,

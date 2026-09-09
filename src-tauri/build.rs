@@ -2,6 +2,9 @@ fn main() {
     tauri_build::try_build(tauri_build::Attributes::new().app_manifest(
         tauri_build::AppManifest::new().commands(&[
             "get_overview",
+            "get_prompt_detail",
+            "open_original_prompt",
+            "take_pending_prompt",
             "get_history",
             "get_usage_metrics",
             "get_recommendations",

@@ -31,6 +31,9 @@ async function call<T>(
   );
 }
 export const api = {
+  promptDetail: (id:string) => call<import('./PromptDetails.svelte').PromptDetail>('get_prompt_detail',{id}),
+  openOriginal: (id:string) => call<boolean>('open_original_prompt',{id}),
+  pendingPrompt: () => call<string|null>('take_pending_prompt'),
   overview: () => call<Overview>("get_overview"),
   metrics: (range: MetricsRange) =>
     call<UsageMetrics>("get_usage_metrics", { range }),

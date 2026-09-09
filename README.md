@@ -1,5 +1,7 @@
 # GCD Usage
 
+**[Read the six-page user manual](output/pdf/GCD-Usage-Manual.pdf)** - setup, token accounting, history, synchronization and limitations.
+
 A lightweight desktop companion with usage meters, searchable prompt history, shared-folder synchronization, and local model advice.
 
 ## Display
@@ -10,7 +12,9 @@ A lightweight desktop companion with usage meters, searchable prompt history, sh
 
 The default is a black theme, percentage **left**, and 120% text size. Settings offers five themes, percentage used instead, and text sizes from 90% to 160%. Native macOS menu-bar appearance follows macOS. Stale readings are marked; unavailable readings show an em dash and missing reset times show N/A.
 
-The Windows activity card shows logged tokens and recent models for the last hour by default. Change its duration in Settings using a preset or 1–43,200 minutes. Hover cards show prompt previews, model/reasoning, time, status, and lifetime logged tokens. Both Claude meters share the same latest Claude history. Totals cover local and synchronized activity; imported browser tokens remain unknown. You can hide hover previews in Settings. Hover cards scroll when the screen cannot fit all ten prompts.
+The Windows activity card shows logged tokens and recent models for the last hour by default. Click it, or right-click the dock, to choose a preset or custom duration of 1–43,200 minutes. Claude also has a Fable weekly meter when its scoped allowance is available. All Claude meters share the latest Claude history.
+
+Hover cards show project/chat context, cleaned prompt previews, model/reasoning, time, status and lifetime logged tokens. Click a row to open a supported original browser conversation or captured details. Coding logs without a verified link retain conversation/turn identifiers. Totals cover local and synchronized activity; imported browser tokens remain unknown. You can hide hover previews in Settings. Hover cards scroll when the screen cannot fit all ten prompts.
 
 ## Install and set up
 
@@ -56,4 +60,4 @@ cargo test --manifest-path src-tauri/Cargo.toml --lib --locked
 npm run app:dev
 ~~~
 
-Build Windows with npm run app:build -- --bundles nsis, or macOS on a Mac with npm run app:build -- --bundles app,dmg. Tagged builds run the four supported architecture jobs. See [Validation](docs/VALIDATION.md).
+Build Windows with `node node_modules/@tauri-apps/cli/tauri.js build --bundles nsis`, or macOS on a Mac with `node node_modules/@tauri-apps/cli/tauri.js build --bundles app,dmg`. Tagged builds run the four supported architecture jobs. See [Validation](docs/VALIDATION.md).

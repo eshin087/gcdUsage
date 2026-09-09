@@ -9,7 +9,7 @@
   color: #27332f;
   background: #f8f9f7;
   font-synthesis: none;
-  font-size: calc(13px * var(--font-scale, 1.2));
+  font-size: calc(15px * var(--font-scale, 1.2));
   line-height: 1.5;
   font-weight: 400;
   --bg: #000000;

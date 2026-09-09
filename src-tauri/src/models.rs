@@ -92,6 +92,10 @@ pub enum ActivityKind {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PromptRecord {
+    #[serde(default)]
+    pub project: Option<String>,
+    #[serde(default)]
+    pub chat_title: Option<String>,
     pub id: String,
     pub provider: Provider,
     pub account_id: String,

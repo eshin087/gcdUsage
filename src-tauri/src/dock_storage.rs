@@ -59,9 +59,16 @@ impl Store {
                 .iter()
                 .any(Option::is_some);
                 prompts.push(DockPrompt {
+                    context: format!(
+                        "{} / {}",
+                        p.project.as_deref().unwrap_or("Project unknown"),
+                        p.chat_title
+                            .as_deref()
+                            .unwrap_or(&p.session_id.chars().take(8).collect::<String>())
+                    ),
                     id: format!("local:{}", p.id),
                     provider: provider.key().into(),
-                    preview: p.preview.chars().take(160).collect(),
+                    preview: crate::presentation::clean_preview(&p.preview),
                     timestamp: Some(p.timestamp),
                     tokens: known.then(|| tokens.total()),
                     models: if models.is_empty() {
@@ -81,9 +88,15 @@ impl Store {
             let browser:Vec<crate::browser_history::BrowserPrompt> = self.query_json("SELECT data FROM browser_prompts WHERE provider=?1 ORDER BY timestamp DESC,id LIMIT 10",params![browser_provider])?;
             for p in browser {
                 prompts.push(DockPrompt {
+                    context: format!(
+                        "Browser / {}",
+                        p.chat_title
+                            .as_deref()
+                            .unwrap_or(&p.conversation_id.chars().take(8).collect::<String>())
+                    ),
                     id: format!("browser:{}", p.id),
                     provider: provider.key().into(),
-                    preview: p.preview,
+                    preview: crate::presentation::clean_preview(&p.preview),
                     timestamp: p.timestamp,
                     tokens: None,
                     models: format!(
@@ -155,6 +168,7 @@ mod tests {
             for i in 0..14 {
                 let message = format!("m{i}");
                 let p = crate::browser_history::BrowserPrompt {
+                    chat_title: None,
                     id: stable_id(&["browser", provider, "a", "s", &message]),
                     provider: provider.into(),
                     account_id: "a".into(),

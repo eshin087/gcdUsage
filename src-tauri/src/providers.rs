@@ -359,6 +359,42 @@ fn parse_claude_windows(value: &Value) -> Vec<QuotaWindow> {
             });
         }
     }
+    // Current Claude Desktop uses labeled scoped limits, including Fable.
+    for limit in value["limits"].as_array().into_iter().flatten().take(64) {
+        let Some(used) = limit.get("percent").and_then(valid_percent) else {
+            continue;
+        };
+        let model = limit
+            .pointer("/scope/model/display_name")
+            .and_then(Value::as_str)
+            .unwrap_or("");
+        let (id, label, duration) = match limit["kind"].as_str() {
+            Some("session") => ("claude:300".into(), "Claude 5h".into(), 300),
+            Some("weekly_all") => ("claude:10080".into(), "Claude weekly".into(), 10080),
+            Some("weekly_scoped")
+                if ["fable", "sonnet", "opus"].contains(&model.to_ascii_lowercase().as_str()) =>
+            {
+                (
+                    format!("claude-{}:10080", model.to_ascii_lowercase()),
+                    format!("Claude {} weekly", crate::presentation::plain(model, 40)),
+                    10080,
+                )
+            }
+            _ => continue,
+        };
+        let window = QuotaWindow {
+            id,
+            label,
+            duration_minutes: duration,
+            used_percent: used,
+            resets_at: limit.get("resets_at").and_then(parse_timestamp),
+        };
+        if let Some(old) = windows.iter_mut().find(|w| w.id == window.id) {
+            *old = window
+        } else {
+            windows.push(window)
+        }
+    }
     windows.sort_by_key(|w| {
         (
             !w.id.starts_with("claude:"),
@@ -1024,6 +1060,23 @@ mod tests {
         assert!(windows
             .iter()
             .any(|w| w.id == "claude-sonnet:10080" && w.used_percent == 100.0));
+    }
+    #[test]
+    fn labeled_scoped_fable_limit_overrides_legacy_and_keeps_unknown_absent() {
+        let rows = parse_claude_windows(
+            &json!({"seven_day":{"utilization":7},"limits":[{"kind":"weekly_all","percent":9},{"kind":"weekly_scoped","percent":18,"resets_at":"2026-09-13T21:00:00-07:00","scope":{"model":{"id":null,"display_name":"Fable"}}},{"kind":"weekly_scoped","percent":null,"scope":{"model":{"display_name":"Opus"}}}]}),
+        );
+        assert_eq!(rows.len(), 2);
+        let f = rows.iter().find(|w| w.id == "claude-fable:10080").unwrap();
+        assert_eq!(f.used_percent, 18.);
+        assert!(f.resets_at.is_some());
+        assert_eq!(
+            rows.iter()
+                .find(|w| w.id == "claude:10080")
+                .unwrap()
+                .used_percent,
+            9.
+        );
     }
     #[test]
     fn errors_are_sanitized_and_retry_is_preserved() {

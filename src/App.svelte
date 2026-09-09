@@ -39,6 +39,10 @@
   import DailyChart from "./lib/DailyChart.svelte";
   import BrowserHistory from "./lib/BrowserHistory.svelte";
   import SignInPanel from "./lib/SignInPanel.svelte";
+  import PromptDetails, {type PromptDetail} from './lib/PromptDetails.svelte';
+  let selectedPrompt=$state<PromptDetail|null>(null);
+  async function openPrompt(id:string){try{const detail=await api.promptDetail(id);if(detail.originalUrl){try{if(await api.openOriginal(id))return}catch{}}selectedPrompt=detail;}catch(e){error=String(e)}}
+  async function takePrompt(){const id=await api.pendingPrompt();if(id)await openPrompt(id)}
 
   type Page =
     "overview" | "history" | "browser" | "recommendations" | "settings";
@@ -425,6 +429,7 @@
     }, 30000);
     const cleanups: (() => void)[] = [];
     if (native) {
+      void listen('prompt-selected',()=>{void takePrompt()}).then(unlisten=>{if(disposed)unlisten();else{cleanups.push(unlisten);void takePrompt()}});
       for (const event of [
         "usage-updated",
         "history-updated",
@@ -454,10 +459,9 @@
 <div class="app-shell">
   <aside class="sidebar" aria-label="Main navigation">
     <div class="brand">
-      <span class="brand-icon"><span></span><span></span><span></span></span
-      ><span>GCD<span class="brand-light">Usage</span></span>
+      <img class="brand-mark" src="/logo.svg" alt="GCD"/><span>GCD<span class="brand-light">Usage</span></span>
     </div>
-    <div class="workspace-label">YOUR WORKSPACE</div>
+    <div class="workspace-label">AI ACTIVITY CONSOLE</div>
     <nav>
       {#each pages as item}<button
           class:active={page === item.id}
@@ -488,7 +492,7 @@
       <div>
         <div class="eyebrow">
           {page === "overview"
-            ? "A LITTLE CLARITY FOR YOUR WORKDAY"
+            ? "YOUR AI / IN FOCUS"
             : page === "history"
               ? "EVERY PROMPT, ACCOUNTED FOR"
               : page === "recommendations"
@@ -555,7 +559,7 @@
 
     <SignInPanel />
     {#if page === "browser"}
-      <BrowserHistory />
+      <BrowserHistory onopen={openPrompt}/>
     {:else if page === "overview"}
       {#if overview && !overview.settings.setupComplete}<div
           class="setup-callout"
@@ -589,6 +593,13 @@
           snapshot={snapshots.find(
             (snapshot) => snapshot.provider === "claude",
           )}
+          {now}
+          display={settings?.meterDisplay ?? "remaining"}
+          {reconnect}
+        /><QuotaCard
+          provider="claude"
+          period="fable"
+          snapshot={snapshots.find((snapshot) => snapshot.provider === "claude")}
           {now}
           display={settings?.meterDisplay ?? "remaining"}
           {reconnect}
@@ -939,9 +950,9 @@
               >{#each history.items as item (item.prompt.id)}<tr
                   class:expanded={expanded === item.prompt.id}
                   ><td
-                    ><div class="prompt-preview">
+                    ><div class="prompt-context">{item.prompt.project || 'Project unknown'} <span> / </span>{item.prompt.chatTitle || `Chat ${item.prompt.sessionId.slice(0,8)}`}</div><button class="prompt-preview prompt-link" onclick={()=>openPrompt(`local:${item.prompt.id}`)}>
                       {item.prompt.preview || "(No prompt preview)"}
-                    </div>
+                    </button>
                     <div class="row-meta">
                       <span class={`provider-dot ${item.prompt.provider}`}
                       ></span>{providerName(item.prompt.provider)}<span>·</span
@@ -1611,3 +1622,4 @@
     {/if}
   </main>
 </div>
+{#if selectedPrompt}<PromptDetails detail={selectedPrompt} onclose={()=>selectedPrompt=null}/>{/if}

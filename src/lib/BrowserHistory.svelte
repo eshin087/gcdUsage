@@ -9,6 +9,7 @@
     type TimePreset,
   } from "./time-range";
   import type { BrowserPage } from "./types";
+  let {onopen}:{onopen:(id:string)=>void}=$props();
   let rows = $state<BrowserPage>({
     items: [],
     total: 0,
@@ -191,7 +192,7 @@
         ></thead
       ><tbody>
         {#each rows.items as row (row.id)}<tr
-            ><td>{row.preview || "No text preview available"}</td><td
+            ><td><div class="prompt-context">{row.chatTitle || `Chat ${row.conversationId.slice(0,8)}`}</div><button class="prompt-link" onclick={()=>onopen(`browser:${row.id}`)}>{row.preview || "No text preview available"} ↗</button></td><td
               >{row.provider === "chatgpt" ? "ChatGPT" : "Claude"}<small
                 >{row.accountLabel}</small
               ></td

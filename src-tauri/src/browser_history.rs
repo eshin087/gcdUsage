@@ -8,6 +8,8 @@ use std::path::Path;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BrowserPrompt {
+    #[serde(default)]
+    pub chat_title: Option<String>,
     pub id: String,
     pub provider: String,
     pub account_id: String,
@@ -22,6 +24,13 @@ pub struct BrowserPrompt {
 }
 impl BrowserPrompt {
     pub fn validate(&self) -> Result<(), String> {
+        if self
+            .chat_title
+            .as_ref()
+            .is_some_and(|s| s.chars().count() > 120 || s.chars().any(char::is_control))
+        {
+            return Err("Invalid conversation title".into());
+        }
         if !["claude", "chatgpt"].contains(&self.provider.as_str())
             || self.id
                 != stable_id(&[
@@ -219,6 +228,11 @@ fn parse_conversation(
             .next()
             .map(str::to_owned);
         let row = BrowserPrompt {
+            chat_title: value
+                .get("title")
+                .or_else(|| value.get("name"))
+                .and_then(Value::as_str)
+                .map(|s| crate::presentation::plain(s, 120)),
             id: stable_id(&[
                 "browser",
                 provider,

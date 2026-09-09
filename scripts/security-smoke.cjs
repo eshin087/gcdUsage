@@ -25,6 +25,7 @@ async function main(){
  const pagesBefore=browser.contexts().flatMap(c=>c.pages()).length;
  await page.evaluate(()=>window.open('https://example.invalid/gcd-security-popup-probe'));
  await new Promise(r=>setTimeout(r,500));assert.equal(browser.contexts().flatMap(c=>c.pages()).length,pagesBefore);assert.equal(page.url(),before);
+ await fs.mkdir('.local-test/security-audit',{recursive:true});
  await fs.writeFile('.local-test/security-audit/native-security.json',JSON.stringify({allowedDashboard:true,ungrantedCommandsDenied:true,externalDocumentBlocked:true,speculativeRequestsObserved:received,popupsBlocked:true},null,2));
  await browser.close();console.log('Native permission, navigation, and popup checks passed');
 }
