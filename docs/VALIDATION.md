@@ -2,6 +2,8 @@
 
 Version 0.3.0 adds the Windows native activity dock and prompt hover cards, with a one-hour default interval and configurable duration. Local checks pass 74 Rust tests, 12 frontend tests, and Svelte/TypeScript validation. Native rendering tests cover multiple font scales, ten-row history, restricted screen space, hidden previews, and unavailable data. Geometry tests cover hover delay, pointer travel into the popup, scrolling layout, drag thresholds, and monitor bounds.
 
+Version 0.3.0 platform tests and package builds completed for Windows x64/ARM64 and macOS Intel/Apple Silicon; both macOS background-launch checks passed. The release contains all four packages and verified SHA-256 checksums. The installed Windows app used approximately 39–45 MB with its dashboard closed, and its history database passed an integrity check after cleanup.
+
 The Windows 0.3.0 dock smoke test passed with populated history: totals matched independent SQLite arithmetic across seven interval changes, invalid durations were rejected, and preview settings persisted. Native dashboard regression, permission, navigation, and popup checks passed; both providers connected successfully. The Windows x64 installer is approximately 2.7 MB. The user confirmed that the hover panel appears above the dock and stays open when moving into it. Live pointer automation was unavailable; drag behavior and mixed-DPI transitions still require an interactive device check. The rendering tests exercise the actual native drawing code with synthetic data.
 
 Version 0.2.0 adds browser-export import, in-app sign-in progress, and device delivery reports for shared history.
