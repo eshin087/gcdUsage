@@ -51,6 +51,6 @@ Browser-import counts describe exported messages. Exact historical token consump
 
 Performance depends on history size and temporary import or provider helpers. Packages are personal previews without trusted publisher signing.
 
-## 0.5.1 revision under validation
+## 0.5.1 Windows validation
 
-The user requested thinner terminal typography, a sharper pixel-style logo, embedded ASCII art and independent dock resizing. Frontend checks pass. Native resizing and revised packages are pending; previous 0.5.0 results above do not yet validate this revision.
+The user requested thinner terminal typography, a sharper pixel-style logo, embedded ASCII art and independent dock resizing. Frontend checks pass. All 81 local Windows Rust tests now pass, including native render checks at 80%, 100% and 160% dock scale. Rendered dock images were visually checked. The new four-platform run was blocked before any jobs started by GitHub account billing/spending restrictions. The local Windows x64 installer passed and was installed successfully (3.23 MB). Native checks passed with 36 synthetic prompts: context cleanup, detail navigation, restricted commands/navigation/popups, seven intervals matched against SQLite, independent dock sizing at 80/100/160%, invalid size rejection and persisted settings. No JavaScript errors were reported. The six-page manual was rendered and visually checked. macOS and Windows ARM64 packages remain blocked; previous 0.5.0 CI results do not validate this revision. The local installer is for personal testing and is not published.
