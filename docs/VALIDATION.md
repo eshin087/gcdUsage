@@ -10,6 +10,8 @@ Native interval totals matched independent SQLite calculations across six time r
 
 Platform packages are built for Windows x64/ARM64 and macOS Intel/Apple Silicon. macOS packages also receive a background-launch smoke test. Interactive macOS sign-in and physical mixed-DPI monitor behavior require checks on the target device.
 
+All four jobs passed in the [0.2.0 validation run](https://github.com/eshin087/gcd-usage/actions/runs/34307692483). The [preview release](https://github.com/eshin087/gcd-usage/releases/tag/v0.2.0) includes packages of approximately 2.4–3.5 MB and SHA-256 checksums. The installed Windows release was checked again after generated development files were removed; its local database remained healthy and both provider connections returned current readings.
+
 Browser-import counts describe exported messages. Exact historical token consumption, hidden reasoning, and original-device attribution are not inferred. Shared-folder receipts describe what each device reported receiving.
 
 Performance depends on history size and temporary import or provider helpers. Packages are personal previews without trusted publisher signing.
