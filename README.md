@@ -6,7 +6,7 @@ A lightweight desktop companion with usage meters, searchable prompt history, sh
 
 - **Windows 11:** a native strip you can drag anywhere in the desktop work area. Lock its position in Settings if desired. It does not modify the Windows taskbar.
 - **macOS:** compact menu-bar usage meters.
-- **Dashboard:** Overview, History, Model advice, and Settings. Closing the dashboard releases its browser while the native meters keep running.
+- **Dashboard:** Overview, History, Browser chats, Model advice, and Settings. Closing the dashboard releases its browser while the native meters keep running.
 
 The default is a black theme, percentage **left**, and 120% text size. Settings offers five themes, percentage used instead, and text sizes from 90% to 160%. Native macOS menu-bar appearance follows macOS. Stale readings are marked; unavailable readings show an em dash and missing reset times show N/A.
 
@@ -37,6 +37,8 @@ The app retains a short prompt preview and usage metadata. **Previews can contai
 History synchronization is optional, and no hosted GCD Usage account is required. See [Security](SECURITY.md) for responsible reporting and security guidance.
 
 Select the same shared folder on each computer, give each computer a recognizable name, and keep all installations updated. Settings shows the most recent folder check, pending records, and reported delivery status for other devices. A folder check alone does not confirm delivery to another computer.
+
+For Google Drive, install Drive for desktop on each computer and create a dedicated GCD Usage folder inside My Drive. Make that folder available offline, then select it in GCD Usage Settings on each computer. Leave Drive for desktop running so changes can be delivered. See Google's [streaming and offline-file guidance](https://support.google.com/drive/answer/13401938). A browser-only Drive session does not provide the local shared folder this version needs.
 
 ## Download size
 
