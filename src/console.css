@@ -80,3 +80,7 @@ main{padding:30px 36px;max-width:1500px}.page-header{border:0;margin-bottom:16px
 .history-table .model-name{font-weight:400}.history-table .log-line{gap:10px}.prompt-modal{background:var(--bg);border-color:var(--line);box-shadow:none}.prompt-modal::backdrop{background:#000a}
 @media(max-width:1050px){.quota-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.app-shell{grid-template-columns:175px minmax(0,1fr)}main{padding:24px}}
 @media(max-width:700px){.app-shell{grid-template-columns:1fr}.sidebar{position:static;width:auto;padding:14px;min-height:0}.sidebar nav{display:flex;flex-wrap:wrap}.workspace-label,.sidebar-bottom{display:none}.brand{font-size:1.3rem}.sidebar nav button{width:auto}.settings-panel .form-field{grid-template-columns:1fr}.settings-panel .form-field .fineprint{grid-column:auto}main{padding:18px}.overview-art{font-size:.6rem}.quota-grid{gap:16px}.save-bar{flex-wrap:wrap}}
+
+/* Keep navigation immediate and the save action in normal flow. */
+.sidebar nav button,.task-selector>button{transition:none}
+.save-bar{position:static}

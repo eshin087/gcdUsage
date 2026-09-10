@@ -58,3 +58,5 @@ The user requested thinner terminal typography, a sharper pixel-style logo, embe
 ## 0.5.2 Site terminal (pending native validation)
 
 Frontend type/Svelte checks and 13 tests pass. Synthetic browser checks cover responsive History, alternate themes, larger fonts, all Settings sections and unknown Browser Pro counts. No native compilation was performed on the local host. The revised native font and 1000-by-84 dock require CI compilation, rendered output review and device validation before installation. The installed 0.5.1 results above do not validate these changes.
+
+The attempted four-platform run was rejected before any steps executed because GitHub reported account payment/spending restrictions. No native tests ran, no installer was produced, and the installed version was not replaced. Dashboard Overview, Settings and Model advice screenshots were visually reviewed. The updated six-page manual was rendered and reviewed on every page. Native font registration is asserted by the render test but remains unexecuted until CI is available.
