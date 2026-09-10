@@ -36,3 +36,7 @@ The final native package passed command-denial, retired-import rejection, extern
 ## 0.5.1 changes
 
 Dock scaling is a bounded local setting (80-160%, default 100%); native size and hit-testing use the same monitor-fitted scale. It does not add generic shell or filesystem access. The new font files are unmodified, pinned IBM Plex assets bundled with their OFL license and loaded locally. Native meters use an existing system monospace font. Legacy settings default the new field without losing history.
+
+## 0.5.2 Site terminal
+
+This presentation change adds no IPC command, network endpoint or collection capability. JetBrains Mono v2.304 is pinned to its official source and bundled with its OFL license. The Windows font is registered privately in memory for the process lifetime; no font installation or registry writes are added. Frontend dependency audit reports zero known advisories; Rust dependency versions are unchanged. Native compilation and runtime verification remain required on CI.

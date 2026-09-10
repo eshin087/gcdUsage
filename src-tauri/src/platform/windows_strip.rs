@@ -87,8 +87,8 @@ unsafe fn dock_scale(window: HWND) -> f64 {
     let requested = GetDpiForWindow(window).max(96) as f64 / 96.0
         * APP.get().map(crate::app::dock_scale).unwrap_or(100) as f64 / 100.0;
     let work = monitor(window, None).rcWork;
-    requested.min((work.right - work.left).max(1) as f64 / 800.0)
-        .min((work.bottom - work.top).max(1) as f64 / 56.0).max(0.01)
+    requested.min((work.right - work.left).max(1) as f64 / 1000.0)
+        .min((work.bottom - work.top).max(1) as f64 / 84.0).max(0.01)
 }
 unsafe fn window_rect(window: HWND) -> RECT {
     let mut r: RECT = std::mem::zeroed();
@@ -161,7 +161,7 @@ pub fn create(app: AppHandle) {
                 WS_POPUP,
                 0,
                 0,
-                800,
+                1000,
                 84,
                 null_mut(),
                 null_mut(),
@@ -229,10 +229,10 @@ pub fn shutdown() {
 unsafe fn position_window(window: HWND, saved: Option<(i32, i32)>) {
     let info = monitor(window, saved.map(|(x, y)| POINT { x, y }));
     let s = dock_scale(window);
-    let width = ((800.0 * s).round() as i32)
+    let width = ((1000.0 * s).round() as i32)
         .min(info.rcWork.right - info.rcWork.left)
         .max(1);
-    let height = ((56.0 * s).round() as i32)
+    let height = ((84.0 * s).round() as i32)
         .min(info.rcWork.bottom - info.rcWork.top)
         .max(1);
     let (x, y) = strip_origin(
@@ -397,9 +397,9 @@ unsafe fn palette() -> Palette {
     }
     if theme == ColorTheme::Black {
         return Palette {
-            bg: rgb(0, 0, 0), card: rgb(7, 16, 11), border: rgb(36, 67, 49),
-            text: rgb(220, 239, 225), muted: rgb(155, 184, 164),
-            orange: rgb(102, 255, 153), green: rgb(102, 255, 153), purple: rgb(102, 255, 153),
+            bg: rgb(10, 10, 8), card: rgb(18, 17, 12), border: rgb(46, 43, 35),
+            text: rgb(242, 236, 220), muted: rgb(179, 172, 154),
+            orange: rgb(179, 172, 154), green: rgb(179, 172, 154), purple: rgb(179, 172, 154),
         };
     }
     let (bg, card) = match theme {
@@ -434,6 +434,16 @@ unsafe fn round(dc: HDC, r: RECT, color: u32, border: u32, radius: i32) {
     DeleteObject(b);
     DeleteObject(p);
 }
+// Process-private font registration; no system installation or registry changes.
+// The embedded bytes and OS resource remain valid for this process lifetime.
+fn terminal_font_available() -> bool {
+    static REGISTERED: OnceLock<bool> = OnceLock::new();
+    *REGISTERED.get_or_init(|| unsafe {
+        let bytes = include_bytes!("../../assets/JetBrainsMono-Regular.ttf");
+        let mut count = 0u32;
+        !AddFontMemResourceEx(bytes.as_ptr().cast(), bytes.len() as u32, null(), &mut count).is_null() && count > 0
+    })
+}
 unsafe fn font(size: i32, weight: i32) -> HFONT {
     CreateFontW(
         size,
@@ -449,7 +459,7 @@ unsafe fn font(size: i32, weight: i32) -> HFONT {
         CLIP_DEFAULT_PRECIS as u32,
         CLEARTYPE_QUALITY as u32,
         DEFAULT_PITCH as u32,
-        wide("Consolas").as_ptr(),
+        wide(if terminal_font_available() { "JetBrains Mono" } else { "Consolas" }).as_ptr(),
     )
 }
 unsafe fn text(dc: HDC, font: HFONT, color: u32, value: &str, mut r: RECT) {
@@ -499,9 +509,9 @@ unsafe fn draw_surface(
     cells: &[(String, String, bool)],
 ) {
     let px = |v: f64| (v * s).round() as i32;
-    let fsmall = font(px(-10.5), 400);
-    let fmedium = font(px(-12.0), 400);
-    let flarge = font(px(-19.0), 400);
+    let fsmall = font(px(if card { -10.5 } else { -13.5 }), 400);
+    let fmedium = font(px(if card { -12.0 } else { -15.5 }), 400);
+    let flarge = font(px(if card { -19.0 } else { -24.0 }), 400);
     SetBkMode(dc, TRANSPARENT as i32);
     fill(dc, bounds, p.bg);
     round(
@@ -718,18 +728,12 @@ unsafe fn draw_surface(
                 p.purple
             };
             let hovered = HOVER.load(Ordering::Acquire) == i as isize;
-            round(
-                dc,
-                RECT {
-                    left,
-                    top: px(3.0),
-                    right: left + width,
-                    bottom: bounds.bottom - px(3.0),
-                },
-                p.bg,
-                if hovered { accent } else { p.border },
-                px(2.0),
-            );
+            if hovered {
+                fill(dc, RECT {left, top: px(3.0), right: left + width, bottom: bounds.bottom - px(3.0)}, p.card);
+            }
+            if i > 0 {
+                fill(dc, RECT {left: left - px(3.0), top: px(12.0), right: left - px(2.0), bottom: bounds.bottom - px(12.0)}, p.border);
+            }
             let r = |y: f64, h: f64| RECT {
                 left: left + px(7.0),
                 top: px(y),
@@ -739,32 +743,32 @@ unsafe fn draw_surface(
             if i < 4 {
                 if let Some((label, value, stale)) = cells.get(i) {
                     let (main, reset) = value.split_once(" · ").unwrap_or((value.as_str(), ""));
-                    text(dc, fsmall, accent, label, r(4.0, 13.0));
+                    text(dc, fmedium, accent, label, r(7.0, 20.0));
                     text(
                         dc,
                         flarge,
                         if *stale { p.muted } else { p.text },
                         main,
-                        r(17.0, 20.0),
+                        r(28.0, 29.0),
                     );
                     text(
                         dc,
                         fsmall,
                         p.muted,
                         &format!("rst {reset}"),
-                        r(37.0, 13.0),
+                        r(60.0, 18.0),
                     );
                 }
             } else {
                 let label = if summary.updated_at.is_some() {
                     format!(
-                        "[{}] tokens / menu",
+                        "tokens / {}",
                         interval(summary.minutes).to_uppercase()
                     )
                 } else {
                     "RECORDED ACTIVITY".into()
                 };
-                text(dc, fsmall, accent, &label, r(4.0, 13.0));
+                text(dc, fmedium, accent, &label, r(7.0, 20.0));
                 let value = if summary.updated_at.is_some() {
                     format!(
                         "{}{}",
@@ -778,13 +782,13 @@ unsafe fn draw_surface(
                 } else {
                     "—".into()
                 };
-                text(dc, flarge, p.text, &value, r(17.0, 20.0));
+                text(dc, flarge, p.text, &value, r(28.0, 29.0));
                 text(
                     dc,
                     fsmall,
                     p.muted,
                     &summary.model_summary(None, 2),
-                    r(37.0, 13.0),
+                    r(60.0, 18.0),
                 );
             }
         }
@@ -800,6 +804,7 @@ mod render_tests {
     use crate::dock::{DockModel, DockPrompt, DockSummary};
     #[test]
     fn native_renderer_handles_scaled_history_privacy_and_unknown_data() {
+        assert!(terminal_font_available(), "Bundled native font must register");
         unsafe {
             let models = vec![
                 DockModel {
@@ -874,7 +879,7 @@ mod render_tests {
             ] {
                 HOVER.store(index, Ordering::Release);
                 SCROLL.store(0, Ordering::Release);
-                let w = (if card { 560.0 } else { 800.0 } * s) as i32;
+                let w = (if card { 560.0 } else { 1000.0 } * s) as i32;
                 let h = (if card {
                     if small {
                         390.0
@@ -882,7 +887,7 @@ mod render_tests {
                         790.0
                     }
                 } else {
-                    56.0
+                    84.0
                 } * s) as i32;
                 let dc = CreateCompatibleDC(null_mut());
                 let mut info: BITMAPINFO = std::mem::zeroed();

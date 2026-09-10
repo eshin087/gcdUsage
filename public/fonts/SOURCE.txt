@@ -1,2 +1,4 @@
-IBM Plex Mono: https://github.com/IBM/plex/tree/bf260093582f04622aacc1e9f9ca604d7ccd0c42
-Unmodified Light and Regular WOFF2 files, bundled under the included SIL Open Font License.
+JetBrains Mono Regular v2.304, unmodified.
+Source: https://github.com/JetBrains/JetBrainsMono/tree/cd5227bd1f61dff3bbd6c814ceaf7ffd95e947d9
+License: JetBrainsMono-OFL.txt (SIL OFL 1.1).
+WOFF2 serves the dashboard; TTF is registered privately for native Windows drawing.
