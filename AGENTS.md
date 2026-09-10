@@ -2,6 +2,10 @@
 
 Read this file before changing the app. Read `HISTORY_LESSONS.md`, `docs/VALIDATION.md`, and `docs/SECURITY_REVIEW.md` for decisions and verification limits. User instructions take precedence over this guidance.
 
+## GitHub cost policy (takes precedence)
+
+The user authorizes no GitHub spending. Use this repository only to host files. Keep Actions disabled, with no workflows, hosted runners, deployments, Codespaces, paid services or metered build/cache/artifact storage. Do not request billing changes or restore CI. Build manually on an explicitly suitable computer; the current host must not run native builds while its LSASS restart issue is unresolved. Older CI delivery instructions below are superseded. See `docs/GITHUB_POLICY.md`.
+
 ## Product and architecture
 
 GCD Usage is a per-user Windows/macOS desktop companion for provider allowance meters, local coding-tool prompt/request history, optional shared-folder sync, and local model advice. It is not an automatic browser collector or a hosted cloud service.
@@ -31,7 +35,7 @@ GCD Usage is a per-user Windows/macOS desktop companion for provider allowance m
 
 ## Development and validation
 
-Use Node 22.12+ and current Rust stable. `npm ci`, `npm run check`, `npm test`, and `cargo test --manifest-path src-tauri/Cargo.toml --lib --locked` are baseline checks. Build Windows with `node node_modules/@tauri-apps/cli/tauri.js build --bundles nsis`. Build macOS on a Mac or the existing four-architecture GitHub workflow.
+Use Node 22.12+ and current Rust stable. `npm ci`, `npm run check`, `npm test`, and `cargo test --manifest-path src-tauri/Cargo.toml --lib --locked` are baseline checks. Build Windows with `node node_modules/@tauri-apps/cli/tauri.js build --bundles nsis`. Build macOS on a Mac ; GitHub builds are disabled.
 
 Use an isolated data directory for native smoke tests; never run tests that mutate real history or sign-in state. `scripts/native-smoke.cjs`, `dock-smoke.cjs`, `security-smoke.cjs`, and `interval-smoke.cjs` contain focused checks. Wait for native startup and completed cache refresh; an async browser predicate alone can produce false positives. Compare totals with independent SQLite calculations and require nonempty fixtures.
 
@@ -45,7 +49,7 @@ Maintain the short manual at `output/pdf/GCD-Usage-Manual.pdf` using `scripts/bu
 
 After QA, preserve compact release artifacts and remove only verified generated workspace folders. Never delete real user data, original provider logs, or unrelated files. Check absolute cleanup targets. Document what was installed, measured, published and left unverified.
 
-Publish CI-built packages. Local binaries may retain personal compiler source paths even when debug symbols are stripped; do not upload locally built installers without checking that boundary.
+Publish only manually validated packages from a suitable build environment. Local binaries may retain personal compiler source paths even when debug symbols are stripped; do not upload locally built installers without checking that boundary.
 
 ## 0.5 product decisions
 
