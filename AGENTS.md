@@ -57,6 +57,6 @@ Use the approved Site terminal style: cream on charcoal with restrained green ac
 
 Dock size uses the local `dockScale` setting (80-160%, default 100%) independently from dashboard/hover `fontScale`. Keep native dock paint, cell hit testing and sizing on the same effective DPI/size scale, with monitor fitting. The readable base geometry is 1000 by 84 logical pixels. The dashboard uses a text gcd_ wordmark, regular JetBrains Mono and restrained static ASCII graphics. Windows embeds a process-private JetBrains Mono TTF; never install it system-wide. Preserve its OFL notice. Packaged icons remain the existing generated mark.
 
-Do not run native builds on this host while the reported LSASS/RPCRT4 restart issue is unresolved. Use CI for native tests/packages; report billing blocks without substituting a local compile.
+Do not run native builds on this host while the reported LSASS/RPCRT4 restart issue is unresolved. Use a suitable existing build computer only after explicit authorization; do not use GitHub Actions or paid build services.
 
 Small icon frames use an optical g crop from the generated mark to preserve legibility. The crop in `scripts/create-icons.mjs` is tied to the current raster asset; review 16/32-pixel output whenever replacing the logo. Do not smooth thin letters into unreadable small icons.

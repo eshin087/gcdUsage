@@ -39,4 +39,4 @@ Dock scaling is a bounded local setting (80-160%, default 100%); native size and
 
 ## 0.5.2 Site terminal
 
-This presentation change adds no IPC command, network endpoint or collection capability. JetBrains Mono v2.304 is pinned to its official source and bundled with its OFL license. The Windows font is registered privately in memory for the process lifetime; no font installation or registry writes are added. Frontend dependency audit reports zero known advisories; Rust dependency versions are unchanged. Native compilation and runtime verification remain required on CI.
+This presentation change adds no IPC command, network endpoint or collection capability. JetBrains Mono v2.304 is pinned to its official source and bundled with its OFL license. The Windows font is registered privately in memory for the process lifetime; no font installation or registry writes are added. Frontend dependency audit reports zero known advisories; Rust dependency versions are unchanged. Native compilation and runtime verification remain required in a suitable manual build environment. GitHub Actions is disabled by policy.
