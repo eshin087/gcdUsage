@@ -58,6 +58,7 @@
   let history = $state<HistoryPage>({ items: [], total: 0 });
   let advice = $state<RecommendationSet>({ recommendations: [], summary: "" });
   let settings = $state<AppSettings | null>(null);
+  let settingsSection = $state("appearance");
   let dirty = $state(false);
   let now = $state(Date.now() / 1000);
   let ready = $state(false);
@@ -457,22 +458,15 @@
 
 <div class="app-shell">
   <aside class="sidebar" aria-label="Main navigation">
-    <div class="brand">
-      <img class="brand-mark" src="/gcd-logo.png" alt="GCD"/><span>GCD<span class="brand-light">Usage</span></span>
-    </div>
-    <pre class="terminal-art" aria-hidden="true">{`[quota]-----[logs]
-   |          |
-   +---[gcd]--+
-         |
-     [insight]`}</pre>
-    <div class="workspace-label">[ AI USAGE / LOCAL NODE ]</div>
+    <div class="brand" aria-label="GCD Usage">gcd<span class="terminal-cursor" aria-hidden="true">_</span></div>
+    <div class="workspace-label">usage / local</div>
     <nav>
       {#each pages as item}<button
           class:active={page === item.id}
           aria-label={item.label}
           aria-current={page === item.id ? "page" : undefined}
           onclick={() => (page = item.id)}
-          ><Icon name={item.id} /><span
+          ><span aria-hidden="true">/</span><span
             >{item.label}</span
           >{#if item.id === "history" && allStats?.promptCount}<span
               class="nav-count">{count(allStats.promptCount)}</span
@@ -496,25 +490,25 @@
       <div>
         <div class="eyebrow">
           {page === "overview"
-            ? "SYS / TELEMETRY"
+            ? "$ gcd status --remaining"
             : page === "history"
-              ? "LOG / REQUEST STREAM"
+              ? "$ gcd history"
               : page === "recommendations"
-                ? "ROUTE / MODEL ADVICE"
-                : "CONFIG / LOCAL NODE"}
+                ? "$ gcd advise"
+                : "$ gcd config"}
         </div>
         <h1>
           {page === "recommendations"
-            ? "Model routing"
+            ? "Model advice"
             : page === "overview"
-              ? "Usage terminal"
+              ? "Your allowance, at a glance."
               : page === "history"
                 ? "Prompt history"
                 : "Settings"}
         </h1>
         <p>
           {page === "overview"
-            ? "[ live allowance / measured activity / local intelligence ]"
+            ? "Live allowance and measured activity."
             : page === "history"
               ? "Measured tokens from Claude Code and local Codex activity."
               : page === "recommendations"
@@ -566,15 +560,18 @@
             <Icon name="recommendations" size={24} />
           </div>
           <div>
-            <strong>Make it yours in a minute.</strong>
+            <strong>Setup is not complete.</strong>
             <p>
-              Check your connections, choose a sync folder, and you’re ready.
+              Review connections and display preferences.
             </p>
           </div>
           <button class="button primary" onclick={() => (page = "settings")}
             >Finish setup <Icon name="arrow" size={15} /></button
           >
         </div>{/if}
+      <pre class="overview-art" aria-hidden="true">{`┌─ usage ──────────────────────────┐
+│  quota → activity → next prompt  │
+└─────────────────────────────────┘`}</pre>
       <section class="quota-grid" aria-label="Current usage limits">
         <QuotaCard
           provider="claude"
@@ -1183,7 +1180,12 @@
       </section>
     {:else if page === "settings"}
       {#if settings}<div class="settings-layout">
-          <section class="panel settings-panel appearance-panel">
+          <div class="settings-tabs" role="group" aria-label="Settings section">
+            {#each [{id:"appearance",label:"Appearance"},{id:"connections",label:"Connections"},{id:"sync",label:"Sync"},{id:"advanced",label:"History & advice"}] as section}
+              <button class="button" class:selected={settingsSection === section.id} aria-pressed={settingsSection === section.id} onclick={() => (settingsSection = section.id)}>{section.label}</button>
+            {/each}
+          </div>
+          <section class="panel settings-panel appearance-panel" hidden={settingsSection !== "appearance"}>
             <div class="panel-heading">
               <div>
                 <h2>Appearance</h2>
@@ -1195,7 +1197,7 @@
                 bind:value={settings.theme}
                 onchange={() => (dirty = true)}
               >
-                <option value="black">Black</option><option value="slate"
+                <option value="black">Site terminal (black)</option><option value="slate"
                   >Slate</option
                 ><option value="midnight">Midnight</option><option value="light"
                   >Light</option
@@ -1309,7 +1311,7 @@
               freely movable window; it does not become part of the taskbar.
             </p>
           </section>
-          <section class="panel settings-panel">
+          <section class="panel settings-panel" hidden={settingsSection !== "connections"}>
             <div class="panel-heading">
               <div>
                 <h2>Your connections</h2>
@@ -1360,7 +1362,7 @@
               ><input type="checkbox" bind:checked={useSso} /></label
             >
           </section>
-          <section class="panel settings-panel">
+          <section class="panel settings-panel" hidden={settingsSection !== "appearance"}>
             <div class="panel-heading">
               <div>
                 <h2>This computer</h2>
@@ -1397,7 +1399,7 @@
               <span>Updates</span><strong>Manual</strong>
             </div>
           </section>
-          <section class="panel settings-panel">
+          <section class="panel settings-panel" hidden={settingsSection !== "sync"}>
             <div class="panel-heading">
               <div>
                 <h2>History across computers</h2>
@@ -1476,7 +1478,7 @@
               Keep the shared folder private.
             </p>
           </section>
-          <section class="panel settings-panel">
+          <section class="panel settings-panel" hidden={settingsSection !== "advanced"}>
             <div class="panel-heading">
               <div>
                 <h2>Model advice</h2>
@@ -1501,7 +1503,7 @@
               model calls are made.
             </p>
           </section>
-          <section class="panel settings-panel">
+          <section class="panel settings-panel" hidden={settingsSection !== "advanced"}>
             <div class="panel-heading">
               <div>
                 <h2>Local history</h2>

@@ -13,7 +13,9 @@ try {
  assert.equal(await page.locator('nav button').count(),4);
  assert.equal(await page.getByRole('button',{name:'Browser chats'}).count(),0);
  assert.equal(await page.getByLabel('Remaining requests unavailable').textContent(),'—');
+ await page.locator('.pro-reference > summary').click();
  assert.ok((await page.locator('.pro-allowance').innerText()).includes('170'));
+ await page.locator('.pro-reference > summary').click();
  await page.screenshot({path:'.local-test/v05/screens/overview.png',fullPage:true});
  await page.locator('nav').getByRole('button',{name:/History/}).click();await page.locator('.log-line').first().waitFor();
  for(const width of [1280,1100,1000,900,760]){
@@ -28,6 +30,17 @@ try {
  }
  await page.evaluate(()=>{document.documentElement.dataset.theme='black';document.documentElement.style.setProperty('--font-scale','1.2');});
  await page.setViewportSize({width:1280,height:900});await page.screenshot({path:'.local-test/v05/screens/history.png'});
+ for(const name of ['Model advice','Settings']) {
+  await page.locator('.sidebar nav').getByRole('button',{name,exact:true}).click();
+  await page.screenshot({path:'.local-test/v05/screens/'+name.replace(' ','-').toLowerCase()+'.png',fullPage:true});
+  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
+ }
+ await page.getByRole('button',{name:'Connections',exact:true}).click();
+ await page.getByRole('heading',{name:/Your connections/}).waitFor();
+ await page.getByRole('button',{name:'Sync',exact:true}).click();
+ await page.getByRole('heading',{name:/History across computers/}).waitFor();
+ await page.getByRole('button',{name:'History & advice',exact:true}).click();
+ await page.getByRole('heading',{name:/Local history/}).waitFor();
  assert.deepEqual(errors,[]);
  await writeFile('.local-test/v05/ui-report.json',JSON.stringify({singleLineHistory:true,maxFontAndThemes:true,manualBrowserUIRemoved:true,proRemainingUnknown:true,responsiveWidths:[760,900,1000,1100,1280],errors},null,2));
  console.log('Terminal preview: compact rows, responsive layout, Pro unknown state and retired browser navigation passed.');

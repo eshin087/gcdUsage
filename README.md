@@ -6,11 +6,13 @@ A lightweight desktop companion with usage meters, searchable prompt history, sh
 
 ## Display
 
-- **Windows 11:** a slim native terminal dock with regular-weight monospace text. Drag anywhere on the dock to move it; click to open the dashboard. Hover a meter to see its last 10 recorded prompts above the dock. It does not modify the Windows taskbar.
+- **Windows 11:** a readable native terminal dock with JetBrains Mono text. Drag anywhere on the dock to move it; click to open the dashboard. Hover a meter to see its last 10 recorded prompts above the dock. It does not modify the Windows taskbar.
 - **macOS:** compact menu-bar usage meters.
 - **Dashboard:** Overview, History, Model advice, and Settings. Closing the dashboard releases its browser while the native meters keep running.
 
-The default is a black terminal theme with thin typography and static ASCII graphics, percentage **left**, and 120% text size. Settings offers five themes, percentage used instead, and text sizes from 90% to 160%. Dock size is independent: use the 80%-160% slider in Settings or right-click the dock for size presets. Dashboard and hover text size remain separate. Native macOS menu-bar appearance follows macOS. Stale readings are marked; unavailable readings show an em dash and missing reset times show N/A.
+The default is a cream-on-charcoal Site terminal theme with regular JetBrains Mono typography and static ASCII graphics, percentage **left**, and 120% text size. Settings offers five themes, percentage used instead, and text sizes from 90% to 160%. Dock size is independent: use the 80%-160% slider in Settings or right-click the dock for size presets. Dashboard and hover text size remain separate. Native macOS menu-bar appearance follows macOS. Stale readings are marked; unavailable readings show an em dash and missing reset times show N/A.
+
+Settings groups appearance, connections, sync, and history/advice into separate sections. The default Windows dock is 1000 by 84 logical pixels before DPI scaling, with larger labels and values.
 
 The Windows activity card shows logged tokens and recent models for the last hour by default. Click it, or right-click the dock, to choose a preset or custom duration of 1–43,200 minutes. Claude also has a Fable weekly meter when its scoped allowance is available. All Claude meters share the latest Claude history.
 
@@ -68,4 +70,4 @@ npm run app:dev
 
 Build Windows with `node node_modules/@tauri-apps/cli/tauri.js build --bundles nsis`, or macOS on a Mac with `node node_modules/@tauri-apps/cli/tauri.js build --bundles app,dmg`. GitHub is used only for file hosting: Actions is disabled and no automatic build or deployment workflow is configured. Builds are manual on a suitable computer; do not enable paid services. See [Validation](docs/VALIDATION.md).
 
-The dashboard bundles IBM Plex Mono under the included [SIL Open Font License](public/fonts/OFL.txt). Fonts load locally; no system-wide font installation or external font request is required.
+The dashboard bundles JetBrains Mono under the included [SIL Open Font License](public/fonts/JetBrainsMono-OFL.txt). Fonts load locally; no system-wide font installation or external font request is required.
