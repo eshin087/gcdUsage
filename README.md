@@ -66,6 +66,6 @@ cargo test --manifest-path src-tauri/Cargo.toml --lib --locked
 npm run app:dev
 ~~~
 
-Build Windows with `node node_modules/@tauri-apps/cli/tauri.js build --bundles nsis`, or macOS on a Mac with `node node_modules/@tauri-apps/cli/tauri.js build --bundles app,dmg`. Tagged builds run the four supported architecture jobs. See [Validation](docs/VALIDATION.md).
+Build Windows with `node node_modules/@tauri-apps/cli/tauri.js build --bundles nsis`, or macOS on a Mac with `node node_modules/@tauri-apps/cli/tauri.js build --bundles app,dmg`. GitHub is used only for file hosting: Actions is disabled and no automatic build or deployment workflow is configured. Builds are manual on a suitable computer; do not enable paid services. See [Validation](docs/VALIDATION.md).
 
 The dashboard bundles IBM Plex Mono under the included [SIL Open Font License](public/fonts/OFL.txt). Fonts load locally; no system-wide font installation or external font request is required.
