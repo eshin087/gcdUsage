@@ -81,6 +81,15 @@ pub(crate) fn dock_summary(app: &tauri::AppHandle) -> (crate::dock::DockSummary,
     (summary, previews)
 }
 
+// Native-only worker entry point; no new webview command or capability.
+pub(crate) fn dock_prompt_page(
+    app: &tauri::AppHandle, provider: Option<&str>, before: Option<&crate::dock::DockCursor>,
+) -> Result<crate::dock::DockPage, String> {
+    let state = app.state::<AppState>();
+    let result = lock(&state.store).dock_prompt_page(provider, before, 40);
+    result
+}
+
 #[tauri::command]
 fn open_pro_documentation() -> Result<(), String> {
     crate::navigation::launch_pro_documentation()

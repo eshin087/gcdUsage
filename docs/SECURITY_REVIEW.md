@@ -40,3 +40,8 @@ Dock scaling is a bounded local setting (80-160%, default 100%); native size and
 ## 0.5.2 Site terminal
 
 This presentation change adds no IPC command, network endpoint or collection capability. JetBrains Mono v2.304 is pinned to its official source and bundled with its OFL license. The Windows font is registered privately in memory for the process lifetime; no font installation or registry writes are added. Frontend dependency audit reports zero known advisories; Rust dependency versions are unchanged. Native compilation and runtime verification remain required in a suitable manual build environment. GitHub Actions is disabled by policy.
+
+## September 10 history paging source preview
+Older hover history is fetched on a background worker using bounded cursor queries. The native window receives cached plain-text records; no webview command, shell permission or external endpoint is added. Lifetime aggregation continues to match both provider and account, and unknown token values remain unavailable. Model details stay in the existing captured-details flow. The popup releases its accumulated history when closed, and generation checks discard results from obsolete hover requests. Native runtime behavior remains unverified pending an authorized build.
+
+The T2 duration picker remains a native window. It uses existing settings persistence and adds no IPC or network access. Whole units convert through checked multiplication with the existing 1-43,200 minute bound; invalid entries cannot be applied. Fonts and brushes are owned by the dialog and released on destruction.

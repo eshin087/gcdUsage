@@ -37,59 +37,9 @@ impl Store {
             .map_err(|e| e.to_string())?;
         let mut prompts = vec![];
         for provider in [Provider::Claude, Provider::Codex] {
-            let recent: Vec<PromptRecord> = self.query_json("SELECT data FROM prompts WHERE provider=?1 AND kind='user' ORDER BY timestamp DESC,id LIMIT 10",params![provider.key()])?;
-            for p in recent {
-                let requests:Vec<RequestUsage> = self.query_json("SELECT data FROM requests WHERE prompt_id=?1 AND provider=?2 AND account_id=?3 ORDER BY timestamp",params![p.id,provider.key(),p.account_id])?;
-                let mut tokens = TokenUsage::default();
-                let mut models = std::collections::BTreeSet::new();
-                for r in &requests {
-                    tokens.add(&r.tokens);
-                    models.insert(format!(
-                        "{} · {}",
-                        r.model,
-                        r.effort.as_deref().unwrap_or("unknown")
-                    ));
-                }
-                let known = [
-                    tokens.input,
-                    tokens.cache_read,
-                    tokens.cache_write,
-                    tokens.output,
-                ]
-                .iter()
-                .any(Option::is_some);
-                prompts.push(DockPrompt {
-                    context: format!(
-                        "{} / {}",
-                        p.project.as_deref().unwrap_or("Project unknown"),
-                        p.chat_title
-                            .as_deref()
-                            .unwrap_or(&p.session_id.chars().take(8).collect::<String>())
-                    ),
-                    id: format!("local:{}", p.id),
-                    provider: provider.key().into(),
-                    preview: crate::presentation::clean_preview(&p.preview),
-                    timestamp: Some(p.timestamp),
-                    tokens: known.then(|| tokens.total()),
-                    models: if models.is_empty() {
-                        "Unknown model / reasoning".into()
-                    } else {
-                        models.into_iter().take(8).collect::<Vec<_>>().join(" / ")
-                    },
-                    status: p.status,
-                    browser: false,
-                });
-            }
-
+            prompts.extend(self.dock_prompt_page(Some(provider.key()), None, 10)?.prompts);
         }
-        prompts.sort_by(|a, b| b.timestamp.cmp(&a.timestamp).then_with(|| a.id.cmp(&b.id)));
-        // Keep enough records for each provider's last ten as well as combined last ten.
-        let mut counts = HashMap::new();
-        prompts.retain(|p| {
-            let n = counts.entry(p.provider.clone()).or_insert(0);
-            *n += 1;
-            *n <= 10
-        });
+        prompts.sort_by(|a,b| b.timestamp.cmp(&a.timestamp).then_with(|| a.id.cmp(&b.id)));
         Ok(DockSummary {
             updated_at: Some(now),
             minutes,
@@ -100,11 +50,106 @@ impl Store {
             prompts,
         })
     }
+    /// Bounded history reads, independent of the selected token interval.
+    pub fn dock_prompt_page(
+        &self, provider: Option<&str>, before: Option<&crate::dock::DockCursor>, limit: usize,
+    ) -> Result<crate::dock::DockPage, String> {
+        if !(1..=100).contains(&limit) || provider.is_some_and(|v| v != "claude" && v != "codex") {
+            return Err("Invalid history page".into());
+        }
+        let timestamp = before.map(|c| c.timestamp);
+        let id = before.map(|c| c.id.as_str()).unwrap_or("");
+        let mut recent: Vec<PromptRecord> = self.query_json(
+            "SELECT data FROM prompts WHERE kind='user' AND provider IN ('claude','codex')
+             AND (?1 IS NULL OR provider=?1)
+             AND (?2 IS NULL OR timestamp<?2 OR (timestamp=?2 AND id>?3))
+             ORDER BY timestamp DESC,id ASC LIMIT ?4",
+            params![provider,timestamp,id,(limit+1) as i64])?;
+        let more = recent.len() > limit;
+        recent.truncate(limit);
+        let next = if more { recent.last().map(|p| crate::dock::DockCursor {
+            timestamp:p.timestamp,id:p.id.clone()
+        }) } else { None };
+        let mut prompts=Vec::with_capacity(recent.len());
+        for p in recent {
+            // Aggregate in SQLite rather than materializing every tool-loop request.
+            // Reasoning overlaps output. Provider/account identity must match.
+            let totals: (Option<u64>, Option<u64>, Option<u64>, Option<u64>) =
+                self.connection.query_row(
+                    "SELECT sum(json_extract(data,'$.tokens.input')),
+                            sum(json_extract(data,'$.tokens.cacheRead')),
+                            sum(json_extract(data,'$.tokens.cacheWrite')),
+                            sum(json_extract(data,'$.tokens.output'))
+                     FROM requests WHERE prompt_id=?1 AND provider=?2 AND account_id=?3",
+                    params![p.id,p.provider.key(),p.account_id],
+                    |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?))).map_err(|e| e.to_string())?;
+            let tokens=[totals.0,totals.1,totals.2,totals.3];
+            let mut statement=self.connection.prepare(
+                "SELECT DISTINCT model,effort FROM requests
+                 WHERE prompt_id=?1 AND provider=?2 AND account_id=?3
+                 ORDER BY model,effort LIMIT 8").map_err(|e|e.to_string())?;
+            let models=statement.query_map(params![p.id,p.provider.key(),p.account_id], |r| {
+                Ok(format!("{} · {}",r.get::<_,String>(0)?,r.get::<_,Option<String>>(1)?.unwrap_or("unknown".into())))
+            }).map_err(|e|e.to_string())?.collect::<Result<Vec<_>,_>>().map_err(|e|e.to_string())?;
+            prompts.push(DockPrompt {
+                context:format!("{} / {}",p.project.as_deref().unwrap_or("Project unknown"),
+                    p.chat_title.as_deref().unwrap_or(&p.session_id.chars().take(8).collect::<String>())),
+                id:format!("local:{}",p.id),provider:p.provider.key().into(),
+                preview:crate::presentation::clean_preview(&p.preview),
+                timestamp:Some(p.timestamp),
+                tokens:tokens.iter().any(Option::is_some).then(|| tokens.iter().flatten().fold(0u64,|sum,n|sum.saturating_add(*n))),
+                models:if models.is_empty() {"Unknown model / reasoning".into()} else {models.join(" / ")},
+                status:p.status,browser:false,
+            });
+        }
+        Ok(crate::dock::DockPage {prompts,next})
+    }
+
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn insert_page_prompt(store: &Store, id: &str, provider: &str, timestamp: i64) {
+        let data=serde_json::json!({"id":id,"provider":provider,"accountId":"a","deviceId":"d",
+            "sessionId":"s","turnId":id,"timestamp":timestamp,"preview":"Synthetic prompt",
+            "status":"completed","kind":"user"});
+        store.connection.execute(
+            "INSERT INTO prompts(id,provider,account_id,device_id,session_id,turn_id,timestamp,preview,status,kind,data)
+             VALUES(?1,?2,'a','d','s',?1,?3,'Synthetic prompt','completed','user',?4)",
+            params![id,provider,timestamp,data.to_string()]).unwrap();
+    }
+    #[test]
+    fn history_pages_pass_ten_without_duplicates_across_equal_times_and_new_imports() {
+        let store=Store::open(Path::new(":memory:")).unwrap();
+        for i in 0..105 {
+            insert_page_prompt(&store,&format!("p{i:03}"),if i%2==0 {"claude"} else {"codex"},100-i/3);
+        }
+        for provider in [None,Some("claude"),Some("codex")] {
+            let mut cursor=None;
+            let mut ids=std::collections::BTreeSet::new();
+            loop {
+                let page=store.dock_prompt_page(provider,cursor.as_ref(),17).unwrap();
+                assert!(page.prompts.len()<=17);
+                for p in page.prompts {
+                    assert!(provider.is_none_or(|v|v==p.provider));
+                    assert_eq!(p.tokens,None);
+                    assert!(ids.insert(p.id),"A prompt appeared on more than one page");
+                }
+                if page.next.is_none() {break;}
+                cursor=page.next;
+            }
+            assert_eq!(ids.len(),match provider {None=>105,Some("claude")=>53,_=>52});
+        }
+        let first=store.dock_prompt_page(None,None,17).unwrap();
+        insert_page_prompt(&store,"newer","codex",200);
+        let next=store.dock_prompt_page(None,first.next.as_ref(),17).unwrap();
+        assert!(next.prompts.iter().all(|p|p.id!="local:newer" &&
+            first.prompts.iter().all(|old|old.id!=p.id)));
+        assert!(store.dock_prompt_page(Some("other"),None,17).is_err());
+        assert!(store.dock_prompt_page(None,None,101).is_err());
+    }
     #[test]
     fn dock_interval_counts_cache_once_and_excludes_end_and_other_accounts() {
         let store = Store::open(Path::new(":memory:")).unwrap();

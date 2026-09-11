@@ -26,7 +26,7 @@ GCD Usage is a per-user Windows/macOS desktop companion for provider allowance m
 - Unknown is null/unavailable, never a fabricated zero. Reasoning overlaps output and must not be added twice.
 - Group tool loops/subagents only when the logs establish attribution. Preserve model changes and unknown historical reasoning.
 - Deduplicate requests using stable source identity. Prevent cross-provider/account replacement and linking.
-- Time intervals are inclusive at the start, exclusive at the end. The hover list is latest-ten history; its row tokens are lifetime totals, independent of the selected rolling interval.
+- Time intervals are inclusive at the start, exclusive at the end. The hover list loads older history in pages as the user scrolls; its row tokens are lifetime totals, independent of the selected rolling interval.
 - Fable uses the provider's labeled scoped weekly limit; never relabel the general five-hour or weekly window as Fable.
 - Keep previews bounded, render them as text, and strip only recognized application wrappers. Never render log text as HTML or execute it.
 - Never hold multiple cache guards across callbacks or native painting. Clone each cache in its own statement and release its lock.
@@ -55,7 +55,7 @@ Publish only manually validated packages from a suitable build environment. Loca
 
 Use the approved Site terminal style: cream on charcoal with restrained green accents and condensed one-line dashboard history. Preserve alternate themes and the larger font setting. Browser imports are retired: no parser, UI or IPC command. Legacy record types/tables remain solely for retention and sync compatibility. Do not restore manual uploads. The Pro $200 browser panel lists dated public caps; remaining requests stay unavailable until a genuine account counter exists. Never infer browser allowance from Codex logs or substitute a cap for remaining balance.
 
-Dock size uses the local `dockScale` setting (80-160%, default 100%) independently from dashboard/hover `fontScale`. Keep native dock paint, cell hit testing and sizing on the same effective DPI/size scale, with monitor fitting. The readable base geometry is 1000 by 84 logical pixels. The dashboard uses a text gcd_ wordmark, regular JetBrains Mono and restrained static ASCII graphics. Windows embeds a process-private JetBrains Mono TTF; never install it system-wide. Preserve its OFL notice. Packaged icons remain the existing generated mark.
+Dock size uses the local `dockScale` setting (80-160%, default 100%) independently from dashboard/hover `fontScale`. Keep native dock paint, cell hit testing and sizing on the same effective DPI/size scale, with monitor fitting. The approved D1 base geometry is 1120 by 120 logical pixels, with generous inner padding and split-color values/reset labels. The dashboard uses a text gcd_ wordmark, regular JetBrains Mono and restrained static ASCII graphics. Windows embeds a process-private JetBrains Mono TTF; never install it system-wide. Preserve its OFL notice. Packaged icons remain the existing generated mark.
 
 Native builds on this host require explicit user authorization while the reported LSASS/RPCRT4 restart issue is unresolved. The user authorized the local 0.5.2 build on September 9, 2026; it completed with two Cargo workers and no new LSASS fault. Do not treat that one authorization as permission for future native builds. Do not use GitHub Actions or paid build services.
 

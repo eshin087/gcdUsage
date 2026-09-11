@@ -24,3 +24,6 @@ artifacts/
 
 /tmp/
 /.vite-qa.err
+
+# Local design approval images and review sheets
+output/design-review/

@@ -169,7 +169,7 @@ impl Store {
             // Restore consistency without changing record identity or token data.
             connection.execute_batch("BEGIN; UPDATE prompts SET data=json_set(data,'$.timestamp',timestamp,'$.sessionId',session_id) WHERE json_extract(data,'$.timestamp')!=timestamp OR json_extract(data,'$.sessionId')!=session_id; UPDATE requests SET data=json_set(data,'$.timestamp',timestamp,'$.sessionId',session_id) WHERE json_extract(data,'$.timestamp')!=timestamp OR json_extract(data,'$.sessionId')!=session_id; PRAGMA user_version=2; COMMIT;").map_err(|e|e.to_string())?;
         }
-        connection.execute_batch("CREATE TABLE IF NOT EXISTS enriched_files(path TEXT PRIMARY KEY, identity TEXT NOT NULL); CREATE INDEX IF NOT EXISTS prompts_session ON prompts(provider,session_id); CREATE INDEX IF NOT EXISTS prompts_provider_time ON prompts(provider,kind,timestamp DESC); CREATE INDEX IF NOT EXISTS requests_identity_prompt ON requests(prompt_id,provider,account_id);").map_err(|e|e.to_string())?;
+        connection.execute_batch("CREATE TABLE IF NOT EXISTS enriched_files(path TEXT PRIMARY KEY, identity TEXT NOT NULL); CREATE INDEX IF NOT EXISTS prompts_session ON prompts(provider,session_id); CREATE INDEX IF NOT EXISTS prompts_provider_time ON prompts(provider,kind,timestamp DESC); CREATE INDEX IF NOT EXISTS prompts_history_cursor ON prompts(kind,timestamp DESC,id); CREATE INDEX IF NOT EXISTS requests_identity_prompt ON requests(prompt_id,provider,account_id);").map_err(|e|e.to_string())?;
         Ok(Self { connection })
     }
 

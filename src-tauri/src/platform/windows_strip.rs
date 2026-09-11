@@ -41,6 +41,66 @@ static DURATION: AtomicIsize = AtomicIsize::new(0);
 const REPAINT: u32 = WM_APP + 1;
 const SETTINGS_CHANGED: u32 = WM_APP + 2;
 const HOVER_TIMER: usize = 1;
+
+const DOCK_WIDTH: f64 = 1120.0;
+const DOCK_HEIGHT: f64 = 120.0;
+const HISTORY_START: f64 = 114.0;
+const HISTORY_ROW: f64 = 38.0;
+const HISTORY_FOOTER: f64 = 48.0;
+static HISTORY: OnceLock<Mutex<HistoryState>> = OnceLock::new();
+static SCROLL_DRAG: AtomicIsize = AtomicIsize::new(0);
+#[derive(Clone, Default)]
+struct HistoryState {
+    generation: usize,
+    provider: Option<String>,
+    prompts: Vec<crate::dock::DockPrompt>,
+    next: Option<crate::dock::DockCursor>,
+    more: bool,
+    loading: bool,
+    failed: bool,
+}
+fn history_state() -> std::sync::MutexGuard<'static, HistoryState> {
+    HISTORY.get_or_init(|| Mutex::new(HistoryState::default())).lock().unwrap_or_else(|e| e.into_inner())
+}
+fn reset_history(provider: Option<&str>, active: bool) {
+    let generation = history_state().generation.wrapping_add(1);
+    *history_state() = HistoryState {generation, provider:provider.map(str::to_owned), more:active, ..Default::default()};
+}
+fn load_older() {
+    let Some(app) = APP.get().cloned() else { return; };
+    let (generation, provider, cursor) = {
+        let mut history = history_state();
+        if history.loading || !history.more { return; }
+        history.loading = true;
+        history.failed = false;
+        (history.generation, history.provider.clone(), history.next.clone())
+    };
+    tauri::async_runtime::spawn_blocking(move || {
+        let page = crate::app::dock_prompt_page(&app, provider.as_deref(), cursor.as_ref());
+        {
+            let mut history = history_state();
+            if history.generation != generation { return; }
+            history.loading = false;
+            match page {
+                Ok(page) => {
+                    history.more = page.next.is_some();
+                    history.next = page.next;
+                    history.prompts.extend(page.prompts);
+                }
+                Err(_) => history.failed = true,
+            }
+        }
+        unsafe { if !popup().is_null() { PostMessageW(popup(), REPAINT, 0, 0); } }
+    });
+}
+fn hover_provider(index: isize) -> Option<&'static str> {
+    match index { 0..=2 => Some("claude"), 3 => Some("codex"), _ => None }
+}
+fn visible_rows(height: i32, scale: f64) -> usize {
+    let start=(HISTORY_START*scale).round() as i32;
+    let row=(HISTORY_ROW*scale).round().max(1.0) as i32;
+    ((height-start-(HISTORY_FOOTER*scale).round() as i32)/row).max(0) as usize
+}
 struct Pointer {
     entered: Instant,
     inside: Instant,
@@ -87,8 +147,8 @@ unsafe fn dock_scale(window: HWND) -> f64 {
     let requested = GetDpiForWindow(window).max(96) as f64 / 96.0
         * APP.get().map(crate::app::dock_scale).unwrap_or(100) as f64 / 100.0;
     let work = monitor(window, None).rcWork;
-    requested.min((work.right - work.left).max(1) as f64 / 1000.0)
-        .min((work.bottom - work.top).max(1) as f64 / 84.0).max(0.01)
+    requested.min((work.right - work.left).max(1) as f64 / DOCK_WIDTH)
+        .min((work.bottom - work.top).max(1) as f64 / DOCK_HEIGHT).max(0.01)
 }
 unsafe fn window_rect(window: HWND) -> RECT {
     let mut r: RECT = std::mem::zeroed();
@@ -161,8 +221,8 @@ pub fn create(app: AppHandle) {
                 WS_POPUP,
                 0,
                 0,
-                1000,
-                84,
+                DOCK_WIDTH as i32,
+                DOCK_HEIGHT as i32,
                 null_mut(),
                 null_mut(),
                 instance,
@@ -229,10 +289,10 @@ pub fn shutdown() {
 unsafe fn position_window(window: HWND, saved: Option<(i32, i32)>) {
     let info = monitor(window, saved.map(|(x, y)| POINT { x, y }));
     let s = dock_scale(window);
-    let width = ((1000.0 * s).round() as i32)
+    let width = ((DOCK_WIDTH * s).round() as i32)
         .min(info.rcWork.right - info.rcWork.left)
         .max(1);
-    let height = ((84.0 * s).round() as i32)
+    let height = ((DOCK_HEIGHT * s).round() as i32)
         .min(info.rcWork.bottom - info.rcWork.top)
         .max(1);
     let (x, y) = strip_origin(
@@ -256,6 +316,8 @@ unsafe fn position_window(window: HWND, saved: Option<(i32, i32)>) {
     );
 }
 unsafe fn hide_card() {
+    reset_history(None, false);
+    SCROLL_DRAG.store(0, Ordering::Release);
     if !popup().is_null() {
         ShowWindow(popup(), SW_HIDE);
     }
@@ -270,10 +332,10 @@ unsafe fn show_card() {
     let dock = window_rect(hwnd());
     let info = monitor(hwnd(), None);
     let s = scale(hwnd());
-    let w = ((560.0 * s) as i32)
+    let w = ((1100.0 * s) as i32)
         .min(info.rcWork.right - info.rcWork.left - 8)
         .max(1);
-    let h = ((790.0 * s) as i32)
+    let h = ((570.0 * s) as i32)
         .min(
             (dock.top - info.rcWork.top - 8)
                 .max(info.rcWork.bottom - dock.bottom - 8)
@@ -322,6 +384,8 @@ unsafe fn hover_tick() {
         HoverDecision::Switch(index) => {
             HOVER.store(index as isize, Ordering::Release);
             SCROLL.store(0, Ordering::Release);
+            reset_history(hover_provider(index as isize), true);
+            load_older();
             if !popup().is_null() {
                 ShowWindow(popup(), SW_HIDE);
             }
@@ -399,7 +463,7 @@ unsafe fn palette() -> Palette {
         return Palette {
             bg: rgb(10, 10, 8), card: rgb(18, 17, 12), border: rgb(46, 43, 35),
             text: rgb(242, 236, 220), muted: rgb(179, 172, 154),
-            orange: rgb(179, 172, 154), green: rgb(179, 172, 154), purple: rgb(179, 172, 154),
+            orange: rgb(179, 172, 154), green: rgb(120, 187, 139), purple: rgb(179, 172, 154),
         };
     }
     let (bg, card) = match theme {
@@ -474,6 +538,23 @@ unsafe fn text(dc: HDC, font: HFONT, color: u32, value: &str, mut r: RECT) {
     );
     SelectObject(dc, old);
 }
+
+unsafe fn text_right(dc:HDC, f:HFONT, color:u32, value:&str, mut r:RECT) {
+    let old=SelectObject(dc,f);
+    SetTextColor(dc,color);
+    DrawTextW(dc,wide(value).as_ptr(),-1,&mut r,DT_SINGLELINE|DT_END_ELLIPSIS|DT_NOPREFIX|DT_VCENTER|DT_RIGHT);
+    SelectObject(dc,old);
+}
+unsafe fn text_pair(dc:HDC,f:HFONT,first:u32,second:u32,prefix:&str,suffix:&str,r:RECT) {
+    let old=SelectObject(dc,f);
+    let w=wide(prefix);
+    let mut size:SIZE=std::mem::zeroed();
+    GetTextExtentPoint32W(dc,w.as_ptr(),(w.len()-1) as i32,&mut size);
+    SelectObject(dc,old);
+    text(dc,f,first,prefix,r);
+    let left=(r.left+size.cx).min(r.right);
+    text(dc,f,second,suffix,RECT {left,..r});
+}
 unsafe fn paint(window: HWND, card: bool) {
     let mut ps: PAINTSTRUCT = std::mem::zeroed();
     let target = BeginPaint(window, &mut ps);
@@ -484,14 +565,16 @@ unsafe fn paint(window: HWND, card: bool) {
     let old_bitmap = SelectObject(dc, bitmap);
     let p = palette();
     let s = if card { scale(hwnd()) } else { dock_scale(hwnd()) };
-    let (summary, previews) = APP.get().map(crate::app::dock_summary).unwrap_or_default();
+    let (mut summary, previews) = APP.get().map(crate::app::dock_summary).unwrap_or_default();
+    let history = if card { Some(history_state().clone()) } else { None };
+    if let Some(h) = &history { summary.prompts = h.prompts.clone(); }
     let cells = CELLS
         .get()
         .unwrap()
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .clone();
-    draw_surface(dc, bounds, p, s, card, &summary, previews, &cells);
+    draw_surface(dc, bounds, p, s, card, &summary, previews, &cells, history.as_ref());
     BitBlt(target, 0, 0, bounds.right, bounds.bottom, dc, 0, 0, SRCCOPY);
     SelectObject(dc, old_bitmap);
     DeleteObject(bitmap);
@@ -507,11 +590,12 @@ unsafe fn draw_surface(
     summary: &crate::dock::DockSummary,
     previews: bool,
     cells: &[(String, String, bool)],
+    history: Option<&HistoryState>,
 ) {
     let px = |v: f64| (v * s).round() as i32;
-    let fsmall = font(px(if card { -10.5 } else { -13.5 }), 400);
-    let fmedium = font(px(if card { -12.0 } else { -15.5 }), 400);
-    let flarge = font(px(if card { -19.0 } else { -24.0 }), 400);
+    let fsmall = font(px(if card { -12.0 } else { -13.0 }), 400);
+    let fmedium = font(px(if card { -13.0 } else { -14.0 }), 400);
+    let flarge = font(px(if card { -20.0 } else { -26.0 }), 400);
     SetBkMode(dc, TRANSPARENT as i32);
     fill(dc, bounds, p.bg);
     round(
@@ -563,233 +647,90 @@ unsafe fn draw_surface(
             "Loading recorded activity…".into()
         };
         text(dc, fmedium, accent, &total_text, r(43.0, 22.0));
-        text(
-            dc,
-            fsmall,
-            p.muted,
-            &summary.model_summary(provider, 3),
-            r(69.0, 20.0),
-        );
-        let age = summary
-            .updated_at
-            .map(|t| (chrono::Utc::now().timestamp() - t).max(0));
-        let note = if age.is_some_and(|n| n > 120) {
-            "History may be stale · open dashboard to refresh"
-        } else {
-            "Latest prompts · lifetime prompt tokens · model / reasoning"
-        };
-        text(dc, fsmall, p.muted, note, r(91.0, 20.0));
+
+        text(dc, fsmall, p.muted, "Row tokens: lifetime · select a prompt for details", r(72.0, 22.0));
         let rows = summary.recent(provider);
-        let row_h = px(62.0).max(1);
-        let start = px(120.0);
-        let visible = ((bounds.bottom - start - px(40.0)) / row_h).max(1) as usize;
+        let row_h = px(HISTORY_ROW).max(1);
+        let start = px(HISTORY_START);
+        let visible = visible_rows(bounds.bottom, s);
         let max_scroll = rows.len().saturating_sub(visible);
         let offset = SCROLL.load(Ordering::Acquire).min(max_scroll);
         SCROLL.store(offset, Ordering::Release);
-        if rows.is_empty() {
-            text(
-                dc,
-                fmedium,
-                p.muted,
-                if summary.updated_at.is_some() {
-                    "No recorded prompts yet"
-                } else {
-                    "History is loading…"
-                },
-                r(145.0, 28.0),
-            );
-        }
-        for (i, row) in rows.iter().skip(offset).take(visible).enumerate() {
-            let top = start + i as i32 * row_h;
-            let row_bounds = RECT {
-                left: px(12.0),
-                top,
-                right: bounds.right - px(12.0),
-                bottom: top + row_h - px(3.0),
-            };
-            round(dc, row_bounds, p.card, p.card, px(2.0));
-            text(
-                dc,
-                fsmall,
-                accent,
-                if previews {
-                    &row.context
-                } else {
-                    "Context hidden"
-                },
-                RECT {
-                    left: px(20.0),
-                    top: top + px(2.0),
-                    right: bounds.right - px(20.0),
-                    bottom: top + px(19.0),
-                },
-            );
-            let preview = if previews {
-                if row.preview.is_empty() {
-                    "No text preview"
-                } else {
-                    &row.preview
-                }
-            } else {
-                "Prompt preview hidden"
-            };
-            let token = row.tokens.map(compact).unwrap_or_else(|| "—".into());
-            text(
-                dc,
-                fmedium,
-                p.text,
-                preview,
-                RECT {
-                    left: px(20.0),
-                    top: top + px(20.0),
-                    right: bounds.right - px(90.0),
-                    bottom: top + px(40.0),
-                },
-            );
-            text(
-                dc,
-                fmedium,
-                accent,
-                &token,
-                RECT {
-                    left: bounds.right - px(81.0),
-                    top: top + px(20.0),
-                    right: bounds.right - px(17.0),
-                    bottom: top + px(40.0),
-                },
-            );
-            let time = row
-                .timestamp
-                .and_then(|t| chrono::DateTime::from_timestamp(t, 0))
-                .map(|t| {
-                    t.with_timezone(&chrono::Local)
-                        .format("%b %d %H:%M")
-                        .to_string()
-                })
-                .unwrap_or_else(|| "Unknown time".into());
-            let detail = format!(
-                "{} · {} · {}{}",
-                time,
-                row.models,
-                row.status,
-                if row.browser { " · browser" } else { "" }
-            );
-            text(
-                dc,
-                fsmall,
-                p.muted,
-                &detail,
-                RECT {
-                    left: px(20.0),
-                    top: top + px(41.0),
-                    right: bounds.right - px(20.0),
-                    bottom: top + px(58.0),
-                },
-            );
-        }
-        let footer = if rows.len() > visible {
-            format!(
-                "{}–{} of {} · scroll for more · browser tokens unknown",
-                offset + 1,
-                (offset + visible).min(rows.len()),
-                rows.len()
-            )
-        } else if summary.unknown_requests > 0 {
-            format!(
-                "{} requests lack tokens · all computers / accounts",
-                summary.unknown_requests
-            )
-        } else {
-            "All computers / accounts · browser tokens unknown".into()
+        let content_width = (bounds.right-px(44.0)).max(1);
+        let x = |fraction:f64| px(22.0)+(content_width as f64*fraction) as i32;
+        let cell = |left:f64,right:f64,top:i32,bottom:i32| RECT {
+            left:x(left),right:x(right)-px(12.0),top,bottom
         };
-        text(
-            dc,
-            fsmall,
-            p.muted,
-            &footer,
-            RECT {
-                left: px(18.0),
-                top: bounds.bottom - px(31.0),
-                right: bounds.right - px(18.0),
-                bottom: bounds.bottom - px(8.0),
-            },
-        );
+        for (label,left,right) in [("Project",0.,0.14),("Prompt",0.14,0.59),("Time",0.59,0.72),("Model",0.72,0.91),("Tokens",0.91,1.)] {
+            text(dc,fsmall,p.muted,label,cell(left,right,px(94.),start));
+        }
+        if rows.is_empty() {
+            text(dc,fmedium,p.muted,
+                if history.is_some_and(|h| h.loading) {"Loading prompts…"}
+                else if history.is_some_and(|h| h.failed) {"Unable to load history. Scroll to retry."}
+                else {"No recorded prompts yet"},r(135.,28.));
+        }
+        for (i,row) in rows.iter().skip(offset).take(visible).enumerate() {
+            let top=start+i as i32*row_h;
+            let bottom=top+row_h-px(6.);
+            fill(dc,RECT {left:px(14.),top,right:bounds.right-px(22.),bottom},p.card);
+            let mut tag=cell(0.,0.14,top+px(6.),bottom-px(6.));
+            round(dc,tag,p.card,p.border,0);
+            tag.left+=px(6.);tag.right-=px(6.);
+            text(dc,fsmall,p.muted,if previews {row.project_label()} else {"Hidden"},tag);
+            let preview=if !previews {"Prompt preview hidden"} else if row.preview.is_empty() {"No text preview"} else {&row.preview};
+            text(dc,fmedium,p.text,preview,cell(0.14,0.59,top,bottom));
+            let time=row.timestamp.and_then(|t| chrono::DateTime::from_timestamp(t,0))
+                .map(|t|t.with_timezone(&chrono::Local).format("%b %d %H:%M").to_string()).unwrap_or("Unknown".into());
+            text(dc,fsmall,p.muted,&time,cell(0.59,0.72,top,bottom));
+            text(dc,fsmall,p.muted,&row.model_label(),cell(0.72,0.91,top,bottom));
+            text_right(dc,fmedium,p.green,&row.tokens.map(compact).unwrap_or("—".into()),cell(0.91,1.,top,bottom));
+        }
+        if rows.len()>visible || history.is_some_and(|h|h.more) {
+            let track=RECT {left:bounds.right-px(12.),top:start,right:bounds.right-px(7.),bottom:bounds.bottom-px(HISTORY_FOOTER)};
+            fill(dc,track,p.border);
+            let virtual_len=rows.len()+if history.is_some_and(|h|h.more) {40} else {0};
+            let thumb_h=((track.bottom-track.top) as f64*visible as f64/virtual_len.max(1) as f64).round() as i32;
+            let thumb_h=thumb_h.max(px(20.)).min((track.bottom-track.top).max(0));
+            let travel=(track.bottom-track.top-thumb_h).max(0);
+            let thumb_y=track.top+(travel as f64*offset as f64/virtual_len.saturating_sub(visible).max(1) as f64) as i32;
+            fill(dc,RECT {top:thumb_y,bottom:thumb_y+thumb_h,..track},p.green);
+        }
+        let footer = if history.is_some_and(|h|h.loading) {"Loading older prompts…"}
+            else if history.is_some_and(|h|h.failed) {"Unable to load older prompts · scroll to retry"}
+            else if history.is_some_and(|h|!h.more) {"All recorded prompts loaded · scroll to browse"}
+            else {"Scroll for older prompts · older entries load automatically"};
+        text(dc,fsmall,p.muted,footer,RECT {left:px(18.),top:bounds.bottom-px(35.),right:bounds.right-px(18.),bottom:bounds.bottom-px(10.)});
     } else {
-        let gap = px(5.0);
-        let inset = px(7.0);
-        let width = (bounds.right - inset * 2 - gap * 4) / 5;
+
         for i in 0..5 {
-            let left = inset + i as i32 * (width + gap);
-            let accent = if i < 3 {
-                p.orange
-            } else if i == 3 {
-                p.green
-            } else {
-                p.purple
-            };
-            let hovered = HOVER.load(Ordering::Acquire) == i as isize;
-            if hovered {
-                fill(dc, RECT {left, top: px(3.0), right: left + width, bottom: bounds.bottom - px(3.0)}, p.card);
+            let left = bounds.right*i/5;
+            let right = bounds.right*(i+1)/5;
+            if HOVER.load(Ordering::Acquire)==i as isize {
+                fill(dc,RECT {left,top:1,right,bottom:bounds.bottom-1},p.card);
             }
-            if i > 0 {
-                fill(dc, RECT {left: left - px(3.0), top: px(12.0), right: left - px(2.0), bottom: bounds.bottom - px(12.0)}, p.border);
-            }
-            let r = |y: f64, h: f64| RECT {
-                left: left + px(7.0),
-                top: px(y),
-                right: left + width - px(6.0),
-                bottom: px(y + h),
-            };
-            if i < 4 {
-                if let Some((label, value, stale)) = cells.get(i) {
-                    let (main, reset) = value.split_once(" · ").unwrap_or((value.as_str(), ""));
-                    text(dc, fmedium, accent, label, r(7.0, 20.0));
-                    text(
-                        dc,
-                        flarge,
-                        if *stale { p.muted } else { p.text },
-                        main,
-                        r(28.0, 29.0),
-                    );
-                    text(
-                        dc,
-                        fsmall,
-                        p.muted,
-                        &format!("rst {reset}"),
-                        r(60.0, 18.0),
-                    );
+            if i>0 { fill(dc,RECT {left,top:1,right:left+1,bottom:bounds.bottom-1},p.border); }
+            let r=|y:f64,h:f64| RECT {left:left+px(22.),right:right-px(18.),top:px(y),bottom:px(y+h)};
+            if i<4 {
+                if let Some((label,value,_stale))=cells.get(i as usize) {
+                    let (main,reset)=value.split_once(" · ").unwrap_or((value.as_str(),""));
+                    text(dc,fmedium,p.text,label,r(13.,22.));
+                    if let Some((amount,unit))=main.trim().split_once(' ') {
+                        if amount.contains('%') { text_pair(dc,flarge,p.green,p.text,amount,&format!(" {unit}"),r(42.,34.)); }
+                        else { text(dc,flarge,p.text,"—",r(42.,34.)); }
+                    } else { text(dc,flarge,p.text,main.trim(),r(42.,34.)); }
+                    let reset=reset.trim();
+                    if main.contains('%') {
+                        text_pair(dc,fsmall,p.muted,p.text,"reset ",reset,r(87.,21.));
+                    } else {
+                        text(dc,fsmall,p.muted,if reset=="sign in" {"sign in needed"} else {reset},r(87.,21.));
+                    }
                 }
             } else {
-                let label = if summary.updated_at.is_some() {
-                    format!(
-                        "tokens / {}",
-                        interval(summary.minutes).to_uppercase()
-                    )
-                } else {
-                    "RECORDED ACTIVITY".into()
-                };
-                text(dc, fmedium, accent, &label, r(7.0, 20.0));
-                let value = if summary.updated_at.is_some() {
-                    format!(
-                        "{}{}",
-                        compact(summary.tokens),
-                        if summary.unknown_requests > 0 {
-                            "+"
-                        } else {
-                            ""
-                        }
-                    )
-                } else {
-                    "—".into()
-                };
-                text(dc, flarge, p.text, &value, r(28.0, 29.0));
-                text(
-                    dc,
-                    fsmall,
-                    p.muted,
-                    &summary.model_summary(None, 2),
-                    r(60.0, 18.0),
-                );
+                let label=if summary.updated_at.is_some() {format!("tokens / {}",interval(summary.minutes).to_uppercase())} else {"tokens".into()};
+                text(dc,fmedium,p.text,&label,r(13.,22.));
+                let value=if summary.updated_at.is_some() {format!("{}{}",compact(summary.tokens),if summary.unknown_requests>0 {"+"} else {""})} else {"—".into()};
+                text(dc,flarge,p.green,&value,r(42.,34.));
             }
         }
     }
@@ -879,15 +820,15 @@ mod render_tests {
             ] {
                 HOVER.store(index, Ordering::Release);
                 SCROLL.store(0, Ordering::Release);
-                let w = (if card { 560.0 } else { 1000.0 } * s) as i32;
+                let w = (if card { 1100.0 } else { DOCK_WIDTH } * s) as i32;
                 let h = (if card {
                     if small {
                         390.0
                     } else {
-                        790.0
+                        570.0
                     }
                 } else {
-                    84.0
+                    DOCK_HEIGHT
                 } * s) as i32;
                 let dc = CreateCompatibleDC(null_mut());
                 let mut info: BITMAPINFO = std::mem::zeroed();
@@ -915,6 +856,7 @@ mod render_tests {
                     &summary,
                     previews,
                     &cells,
+                    None,
                 );
                 GdiFlush();
                 let data = std::slice::from_raw_parts(bits as *const u8, (w * h * 4) as usize);
@@ -944,6 +886,27 @@ mod render_tests {
         }
     }
 }
+
+unsafe fn scroll_history(window: HWND, delta:isize) {
+    let mut bounds:RECT=std::mem::zeroed();GetClientRect(window,&mut bounds);
+    let visible=visible_rows(bounds.bottom,scale(hwnd()));
+    let (len,more)={let h=history_state();(h.prompts.len(),h.more)};
+    let offset=SCROLL.load(Ordering::Acquire).saturating_add_signed(delta).min(len.saturating_sub(visible));
+    SCROLL.store(offset,Ordering::Release);
+    if more && offset+visible+8>=len {load_older();}
+    InvalidateRect(window,null(),0);
+}
+unsafe fn scroll_to_pointer(window:HWND,y:i32) {
+    let mut bounds:RECT=std::mem::zeroed();GetClientRect(window,&mut bounds);
+    let s=scale(hwnd());
+    let visible=visible_rows(bounds.bottom,s);
+    let len=history_state().prompts.len();
+    let start=(HISTORY_START*s).round() as i32;
+    let end=bounds.bottom-(HISTORY_FOOTER*s).round() as i32;
+    let fraction=((y-start) as f64/(end-start).max(1) as f64).clamp(0.,1.);
+    SCROLL.store((fraction*len.saturating_sub(visible) as f64).round() as usize,Ordering::Release);
+    scroll_history(window,0);
+}
 unsafe extern "system" fn cardproc(window: HWND, msg: u32, w: WPARAM, l: LPARAM) -> LRESULT {
     match msg {
         WM_PAINT => {
@@ -952,42 +915,45 @@ unsafe extern "system" fn cardproc(window: HWND, msg: u32, w: WPARAM, l: LPARAM)
         }
         WM_ERASEBKGND => 1,
         WM_MOUSEACTIVATE => MA_NOACTIVATE as isize,
-        WM_MOUSEWHEEL => {
-            let delta = ((w >> 16) as u16) as i16;
-            if delta < 0 {
-                SCROLL.fetch_add(1, Ordering::AcqRel);
-            } else {
-                let _ = SCROLL.fetch_update(Ordering::AcqRel, Ordering::Acquire, |n| {
-                    Some(n.saturating_sub(1))
-                });
-            }
-            InvalidateRect(window, null(), 0);
+
+        REPAINT => {
+            InvalidateRect(window,null(),0);
             0
         }
+        WM_MOUSEWHEEL => {
+            let delta=((w>>16) as u16) as i16;
+            scroll_history(window,if delta<0 {3} else {-3});
+            0
+        }
+        WM_LBUTTONDOWN => {
+            let x=(l as u16) as i16 as i32;
+            let y=((l>>16) as u16) as i16 as i32;
+            let mut bounds:RECT=std::mem::zeroed();GetClientRect(window,&mut bounds);
+            if x>=bounds.right-(20.*scale(hwnd())) as i32 {
+                SCROLL_DRAG.store(1,Ordering::Release);
+                SetCapture(window);scroll_to_pointer(window,y);
+            }
+            0
+        }
+        WM_MOUSEMOVE if SCROLL_DRAG.load(Ordering::Acquire)!=0 => {
+            scroll_to_pointer(window,((l>>16) as u16) as i16 as i32);
+            0
+        }
+        WM_CAPTURECHANGED => {SCROLL_DRAG.store(0,Ordering::Release);0}
         WM_LBUTTONUP => {
-            let y = ((l >> 16) as u16) as i16 as i32;
-            let s = scale(hwnd());
-            let start = (120.0 * s).round() as i32;
-            let mut bounds: RECT = std::mem::zeroed();
-            GetClientRect(window, &mut bounds);
-            let visible = ((bounds.bottom - start - (40.0 * s).round() as i32)
-                / (62.0 * s).round().max(1.0) as i32)
-                .max(0);
-            if y >= start && y < start + visible * (62.0 * s).round().max(1.0) as i32 {
-                let index = ((y - start) / (62.0 * s).round().max(1.0) as i32) as usize
-                    + SCROLL.load(Ordering::Acquire);
-                let provider = match HOVER.load(Ordering::Acquire) {
-                    0 | 1 | 2 => Some("claude"),
-                    3 => Some("codex"),
-                    _ => None,
-                };
-                if let Some(app) = APP.get() {
-                    let summary = crate::app::dock_summary(app).0;
-                    if let Some(row) = summary.recent(provider).get(index) {
-                        crate::app::activate_prompt(app, row.id.clone());
-                        hide_card();
-                    }
-                }
+            if SCROLL_DRAG.swap(0,Ordering::AcqRel)!=0 {ReleaseCapture();return 0;}
+            let x=(l as u16) as i16 as i32;
+            let y=((l>>16) as u16) as i16 as i32;
+            let s=scale(hwnd());
+            let start=(HISTORY_START*s).round() as i32;
+            let row_h=(HISTORY_ROW*s).round().max(1.) as i32;
+            let mut bounds:RECT=std::mem::zeroed();GetClientRect(window,&mut bounds);
+            let visible=visible_rows(bounds.bottom,s);
+            if x>= (14.*s) as i32 && x<bounds.right-(22.*s) as i32 &&
+                y>=start && y<start+visible as i32*row_h && (y-start)%row_h<row_h-(6.*s).round() as i32 {
+                let index=((y-start)/row_h) as usize+SCROLL.load(Ordering::Acquire);
+                let id=history_state().prompts.get(index).map(|r|r.id.clone());
+                if let (Some(app),Some(id))=(APP.get(),id) {crate::app::activate_prompt(app,id);hide_card();}
             }
             0
         }
@@ -1106,6 +1072,8 @@ unsafe extern "system" fn wndproc(window: HWND, msg: u32, w: WPARAM, l: LPARAM) 
             1
         }
         SETTINGS_CHANGED => {
+            let dialog=DURATION.load(Ordering::Acquire) as HWND;
+            if !dialog.is_null() {PostMessageW(dialog,WM_THEMECHANGED,0,0);}
             hide_card();
             position_window(window, APP.get().and_then(crate::strip_position));
             InvalidateRect(window, null(), 0);

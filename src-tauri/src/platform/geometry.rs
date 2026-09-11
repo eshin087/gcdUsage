@@ -50,11 +50,10 @@ pub fn drag_origin(
     let (dx, dy) = (current.0 - start.0, current.1 - start.1);
     (!locked && (dragging || dx.abs() + dy.abs() > 4)).then_some((origin.0 + dx, origin.1 + dy))
 }
-pub fn dock_cell(x: i32, width: i32, scale: f64) -> usize {
-    let inset = (7.0 * scale).round() as i32;
-    let gap = (5.0 * scale).round() as i32;
-    let cell_width = ((width - inset * 2 - gap * 4) / 5).max(1);
-    ((x - inset).max(0) / (cell_width + gap).max(1)).min(4) as usize
+pub fn dock_cell(x: i32, width: i32, _scale: f64) -> usize {
+    // Matches the painter's integer boundaries, including the last pixel.
+    for i in 1..5 { if (x as i64) < width.max(1) as i64 * i / 5 { return (i - 1) as usize; } }
+    4
 }
 
 pub fn popup_origin(dock: Rect, work: Rect, size: (i32, i32), gap: i32) -> (i32, i32) {
@@ -116,6 +115,17 @@ pub fn strip_origin(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn dock_boundaries_match_integer_paint_columns() {
+        for width in [897,1120,1123,1792] {
+            for i in 1..5 {
+                let boundary=width*i/5;
+                assert_eq!(dock_cell(boundary-1,width,1.0),(i-1) as usize);
+                assert_eq!(dock_cell(boundary,width,1.0),i as usize);
+            }
+        }
+    }
     #[test]
     fn hover_waits_switches_and_stays_open_between_dock_and_card() {
         assert_eq!(

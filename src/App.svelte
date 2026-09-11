@@ -569,43 +569,60 @@
             >Finish setup <Icon name="arrow" size={15} /></button
           >
         </div>{/if}
-      <pre class="overview-art" aria-hidden="true">{`┌─ usage ──────────────────────────┐
-│  quota → activity → next prompt  │
-└─────────────────────────────────┘`}</pre>
-      <section class="quota-grid" aria-label="Current usage limits">
-        <QuotaCard
-          provider="claude"
-          period="five_hour"
-          snapshot={snapshots.find(
-            (snapshot) => snapshot.provider === "claude",
-          )}
-          {now}
-          display={settings?.meterDisplay ?? "remaining"}
-          {reconnect}
-        /><QuotaCard
-          provider="claude"
-          period="weekly"
-          snapshot={snapshots.find(
-            (snapshot) => snapshot.provider === "claude",
-          )}
-          {now}
-          display={settings?.meterDisplay ?? "remaining"}
-          {reconnect}
-        /><QuotaCard
-          provider="claude"
-          period="fable"
-          snapshot={snapshots.find((snapshot) => snapshot.provider === "claude")}
-          {now}
-          display={settings?.meterDisplay ?? "remaining"}
-          {reconnect}
-        /><QuotaCard
-          provider="codex"
-          period="weekly"
-          snapshot={snapshots.find((snapshot) => snapshot.provider === "codex")}
-          {now}
-          display={settings?.meterDisplay ?? "remaining"}
-          {reconnect}
-        />
+      <section class="allowance-overview" aria-labelledby="allowance-title">
+        <header class="allowance-heading">
+          <h2 id="allowance-title">Allowance overview</h2>
+          <span>Updated {relativeTime(lastReading, now).toLowerCase()}</span>
+        </header>
+        <section class="quota-grid" aria-label="Current usage limits">
+          <QuotaCard
+            provider="claude"
+            period="five_hour"
+            snapshot={snapshots.find(
+              (snapshot) => snapshot.provider === "claude",
+            )}
+            {now}
+            display={settings?.meterDisplay ?? "remaining"}
+          /><QuotaCard
+            provider="claude"
+            period="weekly"
+            snapshot={snapshots.find(
+              (snapshot) => snapshot.provider === "claude",
+            )}
+            {now}
+            display={settings?.meterDisplay ?? "remaining"}
+          /><QuotaCard
+            provider="claude"
+            period="fable"
+            snapshot={snapshots.find(
+              (snapshot) => snapshot.provider === "claude",
+            )}
+            {now}
+            display={settings?.meterDisplay ?? "remaining"}
+          /><QuotaCard
+            provider="codex"
+            period="weekly"
+            snapshot={snapshots.find(
+              (snapshot) => snapshot.provider === "codex",
+            )}
+            {now}
+            display={settings?.meterDisplay ?? "remaining"}
+          />
+        </section>
+        {#if snapshots.some((snapshot) => snapshot.provider === "claude" && snapshot.status === "needs_auth")}
+          <div class="allowance-reconnect claude-reconnect">
+            <button class="text-button" onclick={() => reconnect("claude")}
+              >Reconnect Claude <Icon name="arrow" size={14} /></button
+            >
+          </div>
+        {/if}
+        {#if snapshots.some((snapshot) => snapshot.provider === "codex" && snapshot.status === "needs_auth")}
+          <div class="allowance-reconnect">
+            <button class="text-button" onclick={() => reconnect("codex")}
+              >Reconnect Codex <Icon name="arrow" size={14} /></button
+            >
+          </div>
+        {/if}
       </section>
       <ProAllowance />
       <div class="reading-meta">

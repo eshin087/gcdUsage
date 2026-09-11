@@ -84,3 +84,27 @@ main{padding:30px 36px;max-width:1500px}.page-header{border:0;margin-bottom:16px
 /* Keep navigation immediate and the save action in normal flow. */
 .sidebar nav button,.task-selector>button{transition:none}
 .save-bar{position:static}
+
+/* Approved O1: calm columns, readable status, and one connection action. */
+.allowance-overview{border:1px solid var(--line);padding:24px;margin:8px 0 20px}
+.allowance-heading{display:flex;justify-content:space-between;align-items:baseline;gap:16px;flex-wrap:wrap;margin-bottom:26px}
+.allowance-heading h2{font-size:1.12rem;font-weight:400;margin:0}
+.allowance-heading>span{font-size:.72rem;color:var(--muted)}
+.allowance-overview .quota-grid{gap:0;grid-template-columns:repeat(4,minmax(0,1fr))}
+.allowance-overview .quota-card{border:0;border-left:1px solid var(--line);padding:0 22px;background:none}
+.allowance-overview .quota-card:first-child{border-left:0;padding-left:0}
+.allowance-overview .quota-card:last-child{padding-right:0}
+.allowance-overview .quota-card h2{font-size:.85rem;color:var(--ink);margin:0 0 16px;line-height:1.5}
+.allowance-overview .status-pill{font-size:.76rem;gap:8px;white-space:normal;min-height:1.5em}
+.allowance-overview .status-dot{width:7px;height:7px;flex-shrink:0}
+.allowance-overview .quota-value{color:var(--accent);font-size:2.15rem;line-height:1.25;margin:22px 0 16px;white-space:nowrap}
+.allowance-overview .quota-value>span{font-size:1.1rem;color:var(--ink);margin-left:10px}
+.allowance-overview .quota-value.unavailable{color:var(--ink)}
+.allowance-overview .quota-track{height:12px;overflow:hidden;background:var(--surface);border:1px solid var(--line);margin:0 0 18px}
+.allowance-overview .quota-track>div{background:var(--accent);opacity:1;transition:none}
+.allowance-overview .quota-track.unavailable{background:transparent;border-style:dashed}
+.allowance-overview .quota-footer{font-size:.78rem;color:var(--ink);line-height:1.6;margin:0}
+.allowance-reconnect{border-top:1px solid var(--line);padding-top:16px;margin-top:24px;text-align:center}
+.claude-reconnect{width:75%}
+@media(max-width:1200px){.allowance-overview .quota-grid{grid-template-columns:repeat(2,minmax(0,1fr));row-gap:28px}.allowance-overview .quota-card:nth-child(3){border-left:0;padding-left:0}.allowance-overview .quota-card:nth-child(2){padding-right:0}.claude-reconnect{width:100%}}
+@media(max-width:700px){.allowance-overview{padding:18px}.allowance-overview .quota-grid{grid-template-columns:1fr}.allowance-overview .quota-card{padding:18px 0 0!important;border-left:0;border-top:1px solid var(--line)}.allowance-overview .quota-card:first-child{border-top:0;padding-top:0!important}}

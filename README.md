@@ -4,19 +4,22 @@
 
 A lightweight desktop companion with usage meters, searchable prompt history, shared-folder synchronization, and local model advice.
 
+## Source preview
+The latest source includes the D1 dock, O1 allowance overview, H2 single-line scrollable history and T2 duration picker. These changes have passed frontend checks; native compilation, interaction testing and updated installers are still pending. Existing release downloads do not contain this redesign.
+
 ## Display
 
-- **Windows 11:** a readable native terminal dock with JetBrains Mono text. Drag anywhere on the dock to move it; click to open the dashboard. Hover a meter to see its last 10 recorded prompts above the dock. It does not modify the Windows taskbar.
+- **Windows 11:** a readable native terminal dock with JetBrains Mono text. Drag anywhere on the dock to move it; click to open the dashboard. Hover a meter to browse recorded prompts above the dock; older entries load automatically while scrolling. It does not modify the Windows taskbar.
 - **macOS:** compact menu-bar usage meters.
 - **Dashboard:** Overview, History, Model advice, and Settings. Closing the dashboard releases its browser while the native meters keep running.
 
 The default is a cream-on-charcoal Site terminal theme with regular JetBrains Mono typography and static ASCII graphics, percentage **left**, and 120% text size. Settings offers five themes, percentage used instead, and text sizes from 90% to 160%. Dock size is independent: use the 80%-160% slider in Settings or right-click the dock for size presets. Dashboard and hover text size remain separate. Native macOS menu-bar appearance follows macOS. Stale readings are marked; unavailable readings show an em dash and missing reset times show N/A.
 
-Settings groups appearance, connections, sync, and history/advice into separate sections. The default Windows dock is 1000 by 84 logical pixels before DPI scaling, with larger labels and values.
+Settings groups appearance, connections, sync, and history/advice into separate sections. The default Windows dock is 1120 by 120 logical pixels before DPI scaling, with more inner padding, green values and fully spelled-out reset labels.
 
-The Windows activity card shows logged tokens and recent models for the last hour by default. Click it, or right-click the dock, to choose a preset or custom duration of 1–43,200 minutes. Claude also has a Fable weekly meter when its scoped allowance is available. All Claude meters share the latest Claude history.
+The Windows activity card shows logged tokens for the last hour by default, without a model subtitle. Click it, or right-click the dock, to choose a preset or a themed custom duration. The custom picker offers 1-hour, 6-hour, 24-hour and 7-day presets plus a whole-number value in minutes, hours or days, bounded to 1 minute through 30 days. Claude also has a Fable weekly meter when its scoped allowance is available. All Claude meters share the latest Claude history.
 
-Hover cards show project/chat context, cleaned prompt previews, model/reasoning, time, status and lifetime logged tokens. Click a row to open captured details. Coding logs without a verified link retain conversation/turn identifiers. Totals cover local and synchronized coding-tool activity. You can hide hover previews in Settings. Hover cards scroll when the screen cannot fit all ten prompts.
+Hover history uses one line per prompt: project, cleaned preview, time, a compact model column and lifetime logged tokens. Additional model changes are indicated by a count; full model/reasoning and chat context remain in captured details. Click a row to open captured details. Coding logs without a verified link retain conversation/turn identifiers. Totals cover local and synchronized coding-tool activity. You can hide hover previews in Settings. History reads are paged in the background and are independent of the selected token interval.
 
 ## Install and set up
 
