@@ -4,8 +4,8 @@
 
 A lightweight desktop companion with usage meters, searchable prompt history, shared-folder synchronization, and local model advice.
 
-## Source preview
-The latest source includes the D1 dock, O1 allowance overview, H2 single-line scrollable history and T2 duration picker. These changes have passed frontend checks; native compilation, interaction testing and updated installers are still pending. Existing release downloads do not contain this redesign.
+## Current local build
+Version 0.5.3 includes the D1 dock, O1 allowance overview, H2 single-line scrollable hover history and T2 duration picker. The Windows x64 package was built and installed locally after native tests and isolated dashboard checks. See [validation notes](docs/VALIDATION.md) for coverage and remaining manual checks. This local installer is not published; existing release downloads do not contain the redesign.
 
 ## Display
 

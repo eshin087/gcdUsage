@@ -233,7 +233,7 @@ unsafe fn unit_menu(window: HWND) {
     let choice=TrackPopupMenu(menu,TPM_RETURNCMD|TPM_NONOTIFY|TPM_LEFTALIGN,
         r.left,r.bottom,0,window,null());
     DestroyMenu(menu);
-    if (2100..=2102).contains(&choice) {
+    if IsWindow(window) != 0 && !picker(window).is_null() && (2100..=2102).contains(&choice) {
         let unit=(choice-2100) as usize;
         (*picker(window)).unit=unit;
         SetWindowTextW(GetDlgItem(window,UNIT_ID),wide(UNITS[unit].1).as_ptr());
@@ -368,5 +368,78 @@ unsafe extern "system" fn proc(window: HWND,msg:u32,w:WPARAM,l:LPARAM)->LRESULT 
             DefWindowProcW(window,msg,w,l)
         }
         _=>DefWindowProcW(window,msg,w,l),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use windows_sys::Win32::UI::Input::KeyboardAndMouse::IsWindowEnabled;
+    use windows_sys::Win32::Storage::Xps::PrintWindow;
+    unsafe fn label(window: HWND, id: i32) -> String {
+        let mut buffer = [0u16; 256];
+        let count = GetWindowTextW(GetDlgItem(window, id), buffer.as_mut_ptr(), 256);
+        String::from_utf16_lossy(&buffer[..count.max(0) as usize])
+    }
+    #[test]
+    fn native_duration_controls_validate_presets_and_close_cleanly() {
+        unsafe {
+            assert!(terminal_font_available());
+            custom_duration(1440);
+            let window = DURATION.load(Ordering::Acquire) as HWND;
+            assert!(!window.is_null());
+            assert_eq!(label(window, VALUE_ID), "24");
+            assert_eq!(label(window, UNIT_ID), "Hours");
+            assert_eq!(input_minutes(window), Some(1440));
+            for (id, expected) in [(201,60),(202,360),(203,1440),(204,10080)] {
+                SendMessageW(window, WM_COMMAND, id, 0);
+                assert_eq!(input_minutes(window), Some(expected));
+            }
+            for invalid in ["", "0", "99999"] {
+                SetWindowTextW(GetDlgItem(window, VALUE_ID), wide(invalid).as_ptr());
+                assert_eq!(input_minutes(window), None);
+                assert_eq!(IsWindowEnabled(GetDlgItem(window,1)), 0);
+                SendMessageW(window, WM_COMMAND, 1, 0);
+                assert_ne!(IsWindow(window), 0, "Invalid Apply must leave dialog open");
+            }
+            set_minutes(window,43200);
+            assert_eq!(input_minutes(window),Some(43200));
+            assert_ne!(IsWindowEnabled(GetDlgItem(window,1)),0);
+            assert_eq!(label(window,SUMMARY_ID),"30 days · 43,200 minutes");
+            set_minutes(window,1440);
+            UpdateWindow(window);
+            if let Some(out) = std::env::var_os("GCD_QA_OUTPUT_DIR") {
+                let r=window_rect(window); let w=r.right-r.left; let h=r.bottom-r.top;
+                let dc=CreateCompatibleDC(null_mut());
+                let mut info:BITMAPINFO=std::mem::zeroed();
+                info.bmiHeader.biSize=size_of::<BITMAPINFOHEADER>() as u32;
+                info.bmiHeader.biWidth=w;info.bmiHeader.biHeight=-h;
+                info.bmiHeader.biPlanes=1;info.bmiHeader.biBitCount=32;info.bmiHeader.biCompression=BI_RGB;
+                let mut bits=null_mut();
+                let bitmap=CreateDIBSection(dc,&info,DIB_RGB_COLORS,&mut bits,null_mut(),0);
+                assert!(!bitmap.is_null());
+                let old=SelectObject(dc,bitmap);
+                assert_ne!(PrintWindow(window,dc,0),0);
+                GdiFlush();
+                let data=std::slice::from_raw_parts(bits as *const u8,(w*h*4) as usize);
+                let mut file=Vec::new();file.extend_from_slice(b"BM");
+                file.extend_from_slice(&(54+data.len() as u32).to_le_bytes());file.extend_from_slice(&[0;4]);
+                file.extend_from_slice(&54u32.to_le_bytes());file.extend_from_slice(&40u32.to_le_bytes());
+                file.extend_from_slice(&w.to_le_bytes());file.extend_from_slice(&(-h).to_le_bytes());
+                file.extend_from_slice(&1u16.to_le_bytes());file.extend_from_slice(&32u16.to_le_bytes());
+                file.extend_from_slice(&[0;24]);file.extend_from_slice(data);
+                let out=std::path::PathBuf::from(out);std::fs::create_dir_all(&out).unwrap();
+                std::fs::write(out.join("duration-picker.bmp"),file).unwrap();
+                SelectObject(dc,old);DeleteObject(bitmap);DeleteDC(dc);
+            }
+            SendMessageW(window,WM_COMMAND,3,0);
+            assert_eq!(IsWindow(window),0);
+            assert_eq!(DURATION.load(Ordering::Acquire),0);
+            custom_duration(60);
+            let reopened=DURATION.load(Ordering::Acquire) as HWND;
+            assert!(!reopened.is_null());
+            SendMessageW(reopened,WM_COMMAND,2,0);
+            assert_eq!(DURATION.load(Ordering::Acquire),0);
+        }
     }
 }

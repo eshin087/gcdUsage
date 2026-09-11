@@ -60,3 +60,5 @@ Dock size uses the local `dockScale` setting (80-160%, default 100%) independent
 Native builds on this host require explicit user authorization while the reported LSASS/RPCRT4 restart issue is unresolved. The user authorized the local 0.5.2 build on September 9, 2026; it completed with two Cargo workers and no new LSASS fault. Do not treat that one authorization as permission for future native builds. Do not use GitHub Actions or paid build services.
 
 Small icon frames use an optical g crop from the generated mark to preserve legibility. The crop in `scripts/create-icons.mjs` is tied to the current raster asset; review 16/32-pixel output whenever replacing the logo. Do not smooth thin letters into unreadable small icons.
+
+The user also explicitly authorized the September 10, 2026 local 0.5.3 installed-app update. It passed with a two-worker Cargo limit and no new LSASS application fault observed. This is not authorization for future native builds while the restart issue remains unresolved.

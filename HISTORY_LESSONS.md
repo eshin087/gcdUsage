@@ -53,3 +53,6 @@ The user authorizes zero GitHub spending and wants file hosting only. Actions is
 
 ## September 10 design selections (source preview)
 The user selected D1 quiet-divider dock, O1 quiet-divider allowance overview, and H2 inset single-line hover history. Keep a compact model column on each history row and load older records automatically while scrolling. Remove only the dock token model subtitle; lifetime row accounting remains unchanged. The user also selected T2: a themed native duration dialog with presets and a custom whole-number value plus unit selector. These source changes have not been natively built or installed.
+
+## September 10 installed 0.5.3 update
+The user explicitly authorized proceeding with the installed app after approving D1/O1/H2/T2. The local Windows x64 release was built, tested with synthetic data and installed as 0.5.3. All 85 Rust and 13 frontend tests pass. Native control tests require their own common-controls v6 manifest; avoid duplicating Tauri's manifest in packaged binaries. The installed executable differs from the pre-bundle build only by Tauri's UNK-to-NSS marker. No new LSASS application fault was observed. This authorization covers this update, not future native builds; keep GitHub Actions disabled. See docs/VALIDATION.md for the remaining interactive checks.
