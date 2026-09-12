@@ -1,4 +1,6 @@
 //! Geometry shared by the native strip and tests; no shell customization required.
+pub const DOCK_WIDTH: f64 = 1120.0;
+pub const DOCK_HEIGHT: f64 = 144.0;
 #[derive(Debug, Clone, Copy)]
 pub struct Rect {
     pub left: i32,
@@ -54,6 +56,41 @@ pub fn dock_cell(x: i32, width: i32, _scale: f64) -> usize {
     // Matches the painter's integer boundaries, including the last pixel.
     for i in 1..5 { if (x as i64) < width.max(1) as i64 * i / 5 { return (i - 1) as usize; } }
     4
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Corner { TopLeft, TopRight, BottomLeft, BottomRight }
+pub fn corner_at(x: i32, y: i32, width: i32, height: i32, grip: i32) -> Option<Corner> {
+    if x < 0 || y < 0 || x >= width || y >= height { return None; }
+    match (x < grip, x >= width-grip, y < grip, y >= height-grip) {
+        (true, _, true, _) => Some(Corner::TopLeft),
+        (_, true, true, _) => Some(Corner::TopRight),
+        (true, _, _, true) => Some(Corner::BottomLeft),
+        (_, true, _, true) => Some(Corner::BottomRight),
+        _ => None,
+    }
+}
+pub fn resize_corner(start: Rect, corner: Corner, delta: (i32,i32), work: Rect, dpi: f64) -> (Rect,u16) {
+    let left = matches!(corner,Corner::TopLeft|Corner::BottomLeft);
+    let top = matches!(corner,Corner::TopLeft|Corner::TopRight);
+    let old = (start.right-start.left) as f64/DOCK_WIDTH;
+    let sx = old + delta.0 as f64 * if left {-1.0} else {1.0}/DOCK_WIDTH;
+    let sy = old + delta.1 as f64 * if top {-1.0} else {1.0}/DOCK_HEIGHT;
+    let requested = if (sx-old).abs() >= (sy-old).abs() {sx} else {sy};
+    let percent = (requested/dpi*100.0).round().clamp(80.0,160.0) as u16;
+    let available_w = if left {start.right-work.left} else {work.right-start.left};
+    let available_h = if top {start.bottom-work.top} else {work.bottom-start.top};
+    let scale = (percent as f64/100.0*dpi).min(available_w.max(1) as f64/DOCK_WIDTH)
+        .min(available_h.max(1) as f64/DOCK_HEIGHT).max(0.001);
+    // Persist the size that fits from the anchored corner, so applying saved
+    // settings cannot expand the dock and move it when the pointer is released.
+    let percent=(scale/dpi*100.0+1e-7).floor().clamp(80.0,160.0) as u16;
+    let scale=scale.min(percent as f64/100.0*dpi);
+    let width=(DOCK_WIDTH*scale).round().max(1.0) as i32;
+    let height=(DOCK_HEIGHT*scale).round().max(1.0) as i32;
+    let x=if left {start.right-width} else {start.left};
+    let y=if top {start.bottom-height} else {start.top};
+    (Rect {left:x,top:y,right:x+width,bottom:y+height},percent)
 }
 
 pub fn popup_origin(dock: Rect, work: Rect, size: (i32, i32), gap: i32) -> (i32, i32) {
@@ -310,5 +347,36 @@ mod tests {
             strip_origin(SCREEN, SCREEN, (500, 56), None, true, 8),
             (1412, 1024)
         );
+    }
+}
+
+#[cfg(test)]
+mod resize_tests {
+    use super::*;
+    #[test]
+    fn all_corners_anchor_the_opposite_corner_and_stay_on_monitor() {
+        let work=Rect {left:-1920,top:0,right:1920,bottom:1080};
+        let start=Rect {left:0,top:400,right:1120,bottom:544};
+        for (corner,dx,dy) in [(Corner::TopLeft,-224,-29),(Corner::TopRight,224,-29),
+            (Corner::BottomLeft,-224,29),(Corner::BottomRight,224,29)] {
+            let (r,percent)=resize_corner(start,corner,(dx,dy),work,1.0);
+            assert_eq!(percent,120);
+            assert_eq!(r.right-r.left,1344);
+            assert_eq!(r.bottom-r.top,173);
+            if matches!(corner,Corner::TopLeft|Corner::BottomLeft) {assert_eq!(r.right,start.right);}
+            else {assert_eq!(r.left,start.left);}
+            if matches!(corner,Corner::TopLeft|Corner::TopRight) {assert_eq!(r.bottom,start.bottom);}
+            else {assert_eq!(r.top,start.top);}
+            let (max,_) = resize_corner(start,corner,(dx*100,dy*100),work,2.0);
+            assert!(max.left>=work.left && max.right<=work.right && max.top>=work.top && max.bottom<=work.bottom);
+        }
+        let near_edge=Rect{left:500,top:400,right:1620,bottom:544};
+        let (fitted,percent)=resize_corner(near_edge,Corner::BottomRight,(700,75),work,1.0);
+        assert_eq!(percent,126);
+        assert_eq!(fitted.left,500);
+        assert_eq!(fitted.right-fitted.left,(1120.0*percent as f64/100.0).round() as i32);
+        assert_eq!(corner_at(0,0,1120,144,12),Some(Corner::TopLeft));
+        assert_eq!(corner_at(1119,143,1120,144,12),Some(Corner::BottomRight));
+        assert_eq!(corner_at(560,72,1120,144,12),None);
     }
 }

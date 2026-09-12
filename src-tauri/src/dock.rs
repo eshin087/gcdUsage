@@ -33,6 +33,8 @@ pub struct DockSummary {
     pub provider_tokens: std::collections::BTreeMap<String, u64>,
     pub models: Vec<DockModel>,
     pub prompts: Vec<DockPrompt>,
+    #[serde(default)]
+    pub allowance_usage: Vec<crate::storage::RecentAllowanceWindow>,
 }
 pub fn compact(value: u64) -> String {
     match value {

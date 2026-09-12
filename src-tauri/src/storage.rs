@@ -7,6 +7,12 @@ mod dock_storage;
 mod enrichment;
 #[path = "metrics.rs"]
 mod metrics;
+#[path = "insights.rs"]
+mod insights;
+pub use insights::UsageInsights;
+#[path = "recent_usage.rs"]
+mod recent_usage;
+pub use recent_usage::{RecentAllowance, RecentAllowanceWindow};
 use crate::models::*;
 use chrono::{DateTime, Utc};
 use rusqlite::{params, params_from_iter, types::Value as SqlValue, Connection, OptionalExtension};
@@ -84,6 +90,10 @@ pub(crate) fn validate_measurements(event: &SyncEvent) -> Result<(), String> {
     }
 }
 
+// Keep the normally tiny link table outermost. Without explicit CROSS JOIN,
+// SQLite can scan unrelated prompt/request pairs even when no links exist.
+const RESOLVE_LINKS_QUERY: &str = "SELECT l.request_id,p.id FROM request_links l CROSS JOIN requests r ON r.id=l.request_id AND r.provider=l.provider AND r.account_id=l.account_id CROSS JOIN prompts p ON p.provider=l.provider AND p.account_id=l.account_id AND p.turn_id=l.turn_id AND p.timestamp<=r.timestamp WHERE p.kind='user' ORDER BY p.timestamp DESC";
+
 pub struct Store {
     connection: Connection,
 }
@@ -154,6 +164,7 @@ impl Store {
             CREATE INDEX IF NOT EXISTS requests_time ON requests(timestamp);
             CREATE TABLE IF NOT EXISTS snapshots(id TEXT PRIMARY KEY, provider TEXT NOT NULL, account_id TEXT NOT NULL, device_id TEXT NOT NULL, timestamp INTEGER NOT NULL, data TEXT NOT NULL);
             CREATE INDEX IF NOT EXISTS snapshots_time ON snapshots(provider,account_id,timestamp);
+            CREATE INDEX IF NOT EXISTS snapshots_scope_time ON snapshots(provider,account_id,device_id,timestamp,id);
             CREATE TABLE IF NOT EXISTS checkpoints(path TEXT PRIMARY KEY, offset INTEGER NOT NULL, identity TEXT NOT NULL, state TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS events(hash TEXT PRIMARY KEY, data TEXT NOT NULL, outbound INTEGER NOT NULL, exported INTEGER NOT NULL DEFAULT 0);
             CREATE TABLE IF NOT EXISTS batches(hash TEXT PRIMARY KEY);
@@ -169,7 +180,7 @@ impl Store {
             // Restore consistency without changing record identity or token data.
             connection.execute_batch("BEGIN; UPDATE prompts SET data=json_set(data,'$.timestamp',timestamp,'$.sessionId',session_id) WHERE json_extract(data,'$.timestamp')!=timestamp OR json_extract(data,'$.sessionId')!=session_id; UPDATE requests SET data=json_set(data,'$.timestamp',timestamp,'$.sessionId',session_id) WHERE json_extract(data,'$.timestamp')!=timestamp OR json_extract(data,'$.sessionId')!=session_id; PRAGMA user_version=2; COMMIT;").map_err(|e|e.to_string())?;
         }
-        connection.execute_batch("CREATE TABLE IF NOT EXISTS enriched_files(path TEXT PRIMARY KEY, identity TEXT NOT NULL); CREATE INDEX IF NOT EXISTS prompts_session ON prompts(provider,session_id); CREATE INDEX IF NOT EXISTS prompts_provider_time ON prompts(provider,kind,timestamp DESC); CREATE INDEX IF NOT EXISTS prompts_history_cursor ON prompts(kind,timestamp DESC,id); CREATE INDEX IF NOT EXISTS requests_identity_prompt ON requests(prompt_id,provider,account_id);").map_err(|e|e.to_string())?;
+        connection.execute_batch("CREATE TABLE IF NOT EXISTS enriched_files(path TEXT PRIMARY KEY, identity TEXT NOT NULL); CREATE INDEX IF NOT EXISTS prompts_session ON prompts(provider,session_id); CREATE INDEX IF NOT EXISTS prompts_link_lookup ON prompts(provider,account_id,turn_id,kind,timestamp DESC); CREATE INDEX IF NOT EXISTS prompts_provider_time ON prompts(provider,kind,timestamp DESC); CREATE INDEX IF NOT EXISTS prompts_history_cursor ON prompts(kind,timestamp DESC,id); CREATE INDEX IF NOT EXISTS requests_identity_prompt ON requests(prompt_id,provider,account_id);").map_err(|e|e.to_string())?;
         Ok(Self { connection })
     }
 
@@ -424,7 +435,7 @@ impl Store {
     pub fn resolve_links(&mut self) -> Result<(), String> {
         self.connection.execute("DELETE FROM request_links WHERE EXISTS(SELECT 1 FROM requests r WHERE r.id=request_links.request_id AND (r.provider!=request_links.provider OR r.account_id!=request_links.account_id))", []).map_err(|e|e.to_string())?;
         let links: Vec<(String, String)> = {
-            let mut q=self.connection.prepare("SELECT l.request_id,p.id FROM request_links l JOIN requests r ON r.id=l.request_id AND r.provider=l.provider AND r.account_id=l.account_id JOIN prompts p ON p.provider=l.provider AND p.account_id=l.account_id AND p.turn_id=l.turn_id AND p.timestamp<=r.timestamp WHERE p.kind='user' ORDER BY p.timestamp DESC").map_err(|e|e.to_string())?;
+            let mut q=self.connection.prepare(RESOLVE_LINKS_QUERY).map_err(|e|e.to_string())?;
             let rows = q
                 .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
                 .map_err(|e| e.to_string())?;
@@ -1067,6 +1078,74 @@ pub(crate) mod tests {
             retry_after_seconds: None,
         }
     }
+    #[test]
+    fn sparse_link_resolution_bounds_sql_work_and_preserves_latest_scoped_attribution() {
+        let mut store = Store::open(Path::new(":memory:")).unwrap();
+        store.begin().unwrap();
+        for i in 0..5000 {
+            let mut p = prompt();
+            p.id = format!("unrelated-p-{i}");
+            p.turn_id = format!("unrelated-turn-{i}");
+            p.timestamp = 1000 + i;
+            p.completed_at = Some(p.timestamp + 10);
+            store.save_prompt(&p).unwrap();
+            let mut r = request();
+            r.id = format!("unrelated-r-{i}");
+            r.source_event_id = r.id.clone();
+            r.prompt_id = Some(p.id.clone());
+            r.timestamp = p.timestamp + 1;
+            store.save_request(&r).unwrap();
+        }
+        store.commit().unwrap();
+
+        fn measured_query(store: &Store) -> (Vec<(String, String)>, i32) {
+            let mut statement = store.connection.prepare(RESOLVE_LINKS_QUERY).unwrap();
+            let rows = statement.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+                .unwrap().collect::<Result<Vec<_>, _>>().unwrap();
+            (rows, statement.get_status(rusqlite::StatementStatus::VmStep))
+        }
+        let (empty, steps) = measured_query(&store);
+        assert!(empty.is_empty());
+        assert!(steps < 20_000, "Empty links must not scan unrelated prompt/request pairs: {steps}");
+        let before = store.connection.total_changes();
+        store.resolve_links().unwrap();
+        assert_eq!(store.connection.total_changes(), before);
+
+        for (id, time, provider, account, kind) in [
+            ("target-early",110,Provider::Codex,"account",ActivityKind::User),
+            ("target-latest",115,Provider::Codex,"account",ActivityKind::User),
+            ("future",121,Provider::Codex,"account",ActivityKind::User),
+            ("background",119,Provider::Codex,"account",ActivityKind::Background),
+            ("other-account",119,Provider::Codex,"other",ActivityKind::User),
+            ("other-provider",119,Provider::Claude,"account",ActivityKind::User),
+        ] {
+            let mut p = prompt();
+            p.id = id.into(); p.timestamp = time; p.provider = provider;
+            p.account_id = account.into(); p.kind = kind;
+            store.save_prompt(&p).unwrap();
+        }
+        let mut linked = request();
+        linked.prompt_id = None;
+        store.save_request(&linked).unwrap();
+        store.link_to_turn("r1", Provider::Codex, "account", "t").unwrap();
+        let (rows, steps) = measured_query(&store);
+        assert_eq!(rows, vec![
+            ("r1".into(), "target-latest".into()), ("r1".into(), "target-early".into())
+        ]);
+        assert!(steps < 20_000, "A rare link must use scoped lookups, not unrelated history: {steps}");
+        store.resolve_links().unwrap();
+        let resolved = store.request("r1").unwrap().unwrap();
+        assert_eq!(resolved.prompt_id.as_deref(), Some("target-latest"));
+        assert_eq!(resolved.tokens, linked.tokens);
+        assert_eq!(resolved.timestamp, linked.timestamp);
+        assert_eq!(resolved.provider, linked.provider);
+        assert_eq!(resolved.account_id, linked.account_id);
+        let changes = store.connection.total_changes();
+        store.resolve_links().unwrap();
+        assert_eq!(store.connection.total_changes(), changes, "Repeated reconciliation must not rewrite unchanged requests");
+        assert_eq!(store.request("r1").unwrap().unwrap().prompt_id, resolved.prompt_id);
+    }
+
     #[test]
     fn deduplicates_and_preserves_nulls() {
         let mut s = Store::open(Path::new(":memory:")).unwrap();

@@ -164,7 +164,8 @@ unsafe fn layout_picker(window: HWND, s: f64) {
     }
     for f in old {if !f.is_null() {DeleteObject(f);}}
 }
-unsafe fn custom_duration(minutes: u32) {
+unsafe fn custom_duration(minutes: u32) { create_duration(minutes, true); }
+unsafe fn create_duration(minutes: u32, show: bool) {
     let existing=DURATION.load(Ordering::Acquire) as HWND;
     if !existing.is_null() {SetForegroundWindow(existing);return;}
     let instance=GetModuleHandleW(null());
@@ -207,9 +208,11 @@ unsafe fn custom_duration(minutes: u32) {
     layout_picker(window,s);
     SendMessageW(GetDlgItem(window,VALUE_ID),EM_SETLIMITTEXT,5,0);
     set_minutes(window,minutes.clamp(1,43200));
-    ShowWindow(window,SW_SHOW);SetForegroundWindow(window);
-    windows_sys::Win32::UI::Input::KeyboardAndMouse::SetFocus(GetDlgItem(window,VALUE_ID));
-    SendMessageW(GetDlgItem(window,VALUE_ID),EM_SETSEL,0,-1);
+    if show {
+        ShowWindow(window,SW_SHOW);SetForegroundWindow(window);
+        windows_sys::Win32::UI::Input::KeyboardAndMouse::SetFocus(GetDlgItem(window,VALUE_ID));
+        SendMessageW(GetDlgItem(window,VALUE_ID),EM_SETSEL,0,-1);
+    }
 }
 unsafe fn unit_menu(window: HWND) {
     let menu=CreatePopupMenu();
@@ -440,6 +443,23 @@ mod tests {
             assert!(!reopened.is_null());
             SendMessageW(reopened,WM_COMMAND,2,0);
             assert_eq!(DURATION.load(Ordering::Acquire),0);
+            let before=native_gui_counts();
+            for i in 0..100 {
+                create_duration(60,false);
+                let window=DURATION.load(Ordering::Acquire) as HWND;
+                assert!(!window.is_null());
+                layout_picker(window,if i%2==0 {0.8} else {1.6});
+                SendMessageW(window,WM_THEMECHANGED,0,0);
+                set_minutes(window,if i%2==0 {30} else {43200});
+                SendMessageW(window,WM_CLOSE,0,0);
+                assert_eq!(DURATION.load(Ordering::Acquire),0);
+            }
+            GdiFlush();
+            let after=native_gui_counts();
+            assert!(after.0<=before.0+2,"GDI objects grew across 100 dialog cycles: {before:?} -> {after:?}");
+            assert!(after.1<=before.1+2,"USER objects grew across 100 dialog cycles: {before:?} -> {after:?}");
+            eprintln!("100 duration create/resize/theme/close cycles, GUI resources {before:?} -> {after:?}");
+
         }
     }
 }

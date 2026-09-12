@@ -1,6 +1,6 @@
 # GCD Usage: project guidance
 
-Read this file before changing the app. Read `HISTORY_LESSONS.md`, `docs/VALIDATION.md`, and `docs/SECURITY_REVIEW.md` for decisions and verification limits. User instructions take precedence over this guidance.
+Read this file before changing the app. Read `HISTORY_LESSONS.md`, `docs/VALIDATION.md`, and `docs/SECURITY_REVIEW.md` for decisions and verification limits. User instructions take precedence over this guidance. When resuming, read docs/PROJECT_STATUS.md; docs/README.md routes to architecture, data contracts, decisions and release checks. Keep status dated and distinguish source, testing, installation and publication.
 
 ## GitHub cost policy (takes precedence)
 
@@ -55,10 +55,12 @@ Publish only manually validated packages from a suitable build environment. Loca
 
 Use the approved Site terminal style: cream on charcoal with restrained green accents and condensed one-line dashboard history. Preserve alternate themes and the larger font setting. Browser imports are retired: no parser, UI or IPC command. Legacy record types/tables remain solely for retention and sync compatibility. Do not restore manual uploads. The Pro $200 browser panel lists dated public caps; remaining requests stay unavailable until a genuine account counter exists. Never infer browser allowance from Codex logs or substitute a cap for remaining balance.
 
-Dock size uses the local `dockScale` setting (80-160%, default 100%) independently from dashboard/hover `fontScale`. Keep native dock paint, cell hit testing and sizing on the same effective DPI/size scale, with monitor fitting. The approved D1 base geometry is 1120 by 120 logical pixels, with generous inner padding and split-color values/reset labels. The dashboard uses a text gcd_ wordmark, regular JetBrains Mono and restrained static ASCII graphics. Windows embeds a process-private JetBrains Mono TTF; never install it system-wide. Preserve its OFL notice. Packaged icons remain the existing generated mark.
+Dock size uses the local `dockScale` setting (80-160%, default 100%) independently from dashboard/hover `fontScale`. Keep native dock paint, cell hit testing and sizing on the same effective DPI/size scale, with monitor fitting. The original D1 base was 1120 by 120 logical pixels. The requested recent-consumption row extends the 0.5.4 dock to 1120 by 144, preserving padding and split-color values/reset labels. The dashboard uses a text gcd_ wordmark, regular JetBrains Mono and restrained static ASCII graphics. Windows embeds a process-private JetBrains Mono TTF; never install it system-wide. Preserve its OFL notice. Packaged icons remain the existing generated mark.
 
 Native builds on this host require explicit user authorization while the reported LSASS/RPCRT4 restart issue is unresolved. The user authorized the local 0.5.2 build on September 9, 2026; it completed with two Cargo workers and no new LSASS fault. Do not treat that one authorization as permission for future native builds. Do not use GitHub Actions or paid build services.
 
 Small icon frames use an optical g crop from the generated mark to preserve legibility. The crop in `scripts/create-icons.mjs` is tied to the current raster asset; review 16/32-pixel output whenever replacing the logo. Do not smooth thin letters into unreadable small icons.
 
 The user also explicitly authorized the September 10, 2026 local 0.5.3 installed-app update. It passed with a two-worker Cargo limit and no new LSASS application fault observed. This is not authorization for future native builds while the restart issue remains unresolved.
+
+The user explicitly authorized the September 11, 2026 local 0.5.4 build, security/performance audit, installation and GitHub source update. Keep this build to two Cargo workers. Record actual validation and installation evidence; this authorization does not apply to future releases.

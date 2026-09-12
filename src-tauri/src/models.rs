@@ -315,6 +315,7 @@ pub struct AppSettings {
     pub dock_scale: u16,
     pub dock_minutes: u32,
     pub dock_previews: bool,
+    pub dock_hidden: bool,
 }
 impl Default for AppSettings {
     fn default() -> Self {
@@ -341,6 +342,7 @@ impl Default for AppSettings {
             dock_scale: 100,
             dock_minutes: 60,
             dock_previews: true,
+            dock_hidden: false,
         }
     }
 }
@@ -423,6 +425,7 @@ mod display_settings_tests {
         assert!(!settings.strip_locked);
         assert_eq!(settings.font_scale, 120);
         assert_eq!(settings.dock_scale, 100);
+        assert!(!settings.dock_hidden);
         assert_eq!(settings.device_id, "existing");
         assert_eq!(settings.strip_x, Some(-1500));
         assert_eq!(settings.strip_y, Some(200));
@@ -431,6 +434,9 @@ mod display_settings_tests {
         let roundtrip: AppSettings =
             serde_json::from_value(serde_json::to_value(&settings).unwrap()).unwrap();
         assert_eq!(roundtrip.theme, settings.theme);
+        let mut hidden=settings.clone();hidden.dock_hidden=true;
+        let restored:AppSettings=serde_json::from_value(serde_json::to_value(&hidden).unwrap()).unwrap();
+        assert!(restored.dock_hidden);
     }
     #[test]
     fn percentage_mode_keeps_invalid_measurements_unknown() {

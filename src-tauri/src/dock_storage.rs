@@ -48,6 +48,7 @@ impl Store {
             provider_tokens,
             models,
             prompts,
+            allowance_usage: Vec::new(),
         })
     }
     /// Bounded history reads, independent of the selected token interval.

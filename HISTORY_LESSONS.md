@@ -56,3 +56,18 @@ The user selected D1 quiet-divider dock, O1 quiet-divider allowance overview, an
 
 ## September 10 installed 0.5.3 update
 The user explicitly authorized proceeding with the installed app after approving D1/O1/H2/T2. The local Windows x64 release was built, tested with synthetic data and installed as 0.5.3. All 85 Rust and 13 frontend tests pass. Native control tests require their own common-controls v6 manifest; avoid duplicating Tauri's manifest in packaged binaries. The installed executable differs from the pre-bundle build only by Tauri's UNK-to-NSS marker. No new LSASS application fault was observed. This authorization covers this update, not future native builds; keep GitHub Actions disabled. See docs/VALIDATION.md for the remaining interactive checks.
+
+## September 11 controls and insights
+The user chose usage forecasting and persistent hidden state. Windows dock corners resize proportionally within 80-160% and monitor bounds, preserving the opposite corner. Persist the fitted size so release does not reposition the dock. Hide is restored only explicitly, including after restart; tray double-click and Show dock restore it. Save native control changes without discarding unrelated dashboard edits.
+
+Claude access tokens can expire while a refresh token remains valid. Renew through the installed helper's documented non-interactive path and provider-owned credential store; do not create a second credential store. Honor missing credentials and manual logout, serialize local refresh attempts, and keep secret values out of logs and arguments.
+
+Model advice adds local activity insights and a forecast from actual provider percentage changes. Forecasts require sufficient continuous readings from the same account/device/window. Never derive allowance exhaustion from token counts. This source update does not authorize a new native build.
+
+The user also selected recent consumption directly on the dock, with the same duration as dock tokens. Keep the value on dashboard cards and in Model advice too. Preserve padding by extending the dock height to 144 logical pixels and share its geometry constants between sizing, resizing and paint. Recent consumption is observed percentage-point change, with partial coverage for resets/gaps; it is separate from forecasting and request token totals. Project references now have a maintained index in docs/README.md.
+
+
+## September 11 security and resource review
+The user explicitly authorized the local 0.5.4 build, installation and GitHub source update. Reset labels and times use muted red, with darker red on the light theme. Renewal helpers receive a narrow environment, bounded tokens, fixed arguments and process-tree cleanup. Do not expose secrets in command arguments or audit evidence; provider-owned storage and compromised local accounts remain trust boundaries.
+
+Native control automation must settle queued window messages and verify the actual pointer/capture. User mouse movement can interrupt a synthetic drag; record the trace and repeat during an agreed brief input-free window. Four-corner and tray checks passed under that condition. Closing dashboard WebViews and native resource counts require runtime observation; source review cannot prove universal freedom from leaks.

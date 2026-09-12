@@ -1,4 +1,7 @@
 <script lang="ts">
+  import UsageInsights from "./lib/UsageInsights.svelte";
+  import AllowanceDuration from "./lib/AllowanceDuration.svelte";
+  import { mergeDockSettings } from "./lib/settings";
   import {
     localDateTime,
     rangeDescription,
@@ -88,6 +91,23 @@
   let customFrom = $state(localDateTime(Math.floor(Date.now() / 1000) - 86400));
   let customTo = $state(localDateTime(Math.floor(Date.now() / 1000)));
   let metricsClock = $state(Math.floor(Date.now() / 1000));
+  let recentAllowance = $state<import("./lib/types").RecentAllowance | null>(null);
+  let recentPending = $state(false), recentError = $state("");
+  const recentMinutes = $derived(overview?.settings.dockMinutes ?? 60);
+  $effect(() => {
+    const minutes=recentMinutes, currentPage=page;
+    void metricsClock; void overview?.snapshots.map(s=>s.id).join(":");
+    if (currentPage!=="overview" && currentPage!=="recommendations") return;
+    let active=true;recentPending=true;recentError="";
+    api.recentAllowance(minutes).then(result=>{if(active)recentAllowance=result})
+      .catch(reason=>{if(active){recentAllowance=null;recentError=String(reason)}})
+      .finally(()=>{if(active)recentPending=false});
+    return ()=>{active=false};
+  });
+  async function changeActivityDuration(minutes:number) {
+    await api.setActivityDuration(minutes);
+    await loadOverview();
+  }
   let metricsRequest = 0;
   let historyRequest = 0;
   let adviceRequest = 0;
@@ -180,6 +200,7 @@
     try {
       const result = await api.overview();
       if (disposed) return;
+      if (dirty && settings && overview) settings = mergeDockSettings(settings, overview.settings, result.settings);
       overview = result;
       if (!dirty) settings = { ...result.settings };
     } catch (reason) {
@@ -574,6 +595,8 @@
           <h2 id="allowance-title">Allowance overview</h2>
           <span>Updated {relativeTime(lastReading, now).toLowerCase()}</span>
         </header>
+        <AllowanceDuration minutes={recentMinutes} onchange={changeActivityDuration} />
+        {#if recentError}<p class="field-error" role="alert">Recent usage unavailable. {recentError}</p>{/if}
         <section class="quota-grid" aria-label="Current usage limits">
           <QuotaCard
             provider="claude"
@@ -583,6 +606,7 @@
             )}
             {now}
             display={settings?.meterDisplay ?? "remaining"}
+            recent={recentAllowance} {recentMinutes} {recentPending}
           /><QuotaCard
             provider="claude"
             period="weekly"
@@ -591,6 +615,7 @@
             )}
             {now}
             display={settings?.meterDisplay ?? "remaining"}
+            recent={recentAllowance} {recentMinutes} {recentPending}
           /><QuotaCard
             provider="claude"
             period="fable"
@@ -599,6 +624,7 @@
             )}
             {now}
             display={settings?.meterDisplay ?? "remaining"}
+            recent={recentAllowance} {recentMinutes} {recentPending}
           /><QuotaCard
             provider="codex"
             period="weekly"
@@ -607,6 +633,7 @@
             )}
             {now}
             display={settings?.meterDisplay ?? "remaining"}
+            recent={recentAllowance} {recentMinutes} {recentPending}
           />
         </section>
         {#if snapshots.some((snapshot) => snapshot.provider === "claude" && snapshot.status === "needs_auth")}
@@ -1084,6 +1111,8 @@
         browser conversations are outside this history.
       </p>
     {:else if page === "recommendations"}
+      <UsageInsights refreshKey={metricsClock + ":" + (overview?.snapshots.map(s => s.id).join(":") ?? "")} recent={recentAllowance} {recentMinutes} {recentPending} {recentError} onDurationChange={changeActivityDuration} />
+      <h2 class="next-model-heading">Choose your next model</h2>
       <div class="task-selector" role="group" aria-label="Choose your task">
         <button
           class:selected={task === "quick"}
@@ -1219,7 +1248,7 @@
                 ><option value="midnight">Midnight</option><option value="light"
                   >Light</option
                 ><option value="system">System</option>
-              </select></label
+              </select><span class="fineprint">Saving applies the same palette to the dashboard, Windows dock, hover history, and duration picker.</span></label
             >
             <label class="form-field"
               >Meter percentages<select
@@ -1247,15 +1276,19 @@
               >
             </label>
             {#if isWindows}
+              <label class="toggle-row">
+                <span><strong>Hide dock</strong><small>Stay hidden across restarts. Double-click the tray icon or choose Show dock in its menu to bring it back.</small></span>
+                <input type="checkbox" bind:checked={settings.dockHidden} onchange={() => (dirty = true)} /><span class="switch" aria-hidden="true"></span>
+              </label>
               <label class="form-field font-control">Dock size · {settings.dockScale ?? 100}%
                 <input aria-label="Dock size" type="range" min="80" max="160" step="5" bind:value={settings.dockScale} oninput={() => (dirty = true)} />
-                <span class="fineprint">80%–160% · Default 100%. Resize the dock independently from dashboard text. Also available in the dock's right-click menu.</span>
+                <span class="fineprint">80%–160% · Drag any unlocked corner to resize, or use this slider. The dock keeps its proportions and remembers its size.</span>
               </label>
             {/if}
             {#if isWindows}<label class="toggle-row"
                 ><span
                   ><strong>Lock strip position</strong><small
-                    >Prevent accidental movement. Off by default; drag anywhere
+                    >Prevent accidental movement and resizing. Off by default; drag anywhere
                     on the dock to move it. Click to open the dashboard.</small
                   ></span
                 ><input

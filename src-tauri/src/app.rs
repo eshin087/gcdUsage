@@ -160,6 +160,38 @@ async fn open_original_prompt(app: tauri::AppHandle, id: String) -> Result<bool,
 pub(crate) fn dock_scale(app: &tauri::AppHandle) -> u16 {
     lock(&app.state::<AppState>().settings).dock_scale.clamp(80, 160)
 }
+pub(crate) fn dock_hidden(app: &tauri::AppHandle) -> bool {
+    lock(&app.state::<AppState>().settings).dock_hidden
+}
+pub(crate) fn set_dock_hidden(app: &tauri::AppHandle, hidden: bool) -> Result<(), String> {
+    let state = app.state::<AppState>();
+    {
+        let mut stored = lock(&state.settings);
+        let mut next = stored.clone();
+        next.dock_hidden = hidden;
+        persist(&state.settings_path, &next)?;
+        *stored = next;
+    }
+    platform::settings_changed();
+    let _ = app.emit("settings-updated", ());
+    Ok(())
+}
+pub(crate) fn set_dock_geometry(app: &tauri::AppHandle, scale: u16, x: i32, y: i32) -> Result<(), String> {
+    if !(80..=160).contains(&scale) { return Err("Dock size must be between 80 and 160 percent".into()); }
+    let state = app.state::<AppState>();
+    {
+        let mut stored = lock(&state.settings);
+        let mut next = stored.clone();
+        next.dock_scale = scale;
+        next.strip_x = Some(x);
+        next.strip_y = Some(y);
+        persist(&state.settings_path, &next)?;
+        *stored = next;
+    }
+    platform::settings_changed();
+    let _ = app.emit("settings-updated", ());
+    Ok(())
+}
 pub(crate) fn set_dock_scale(app: &tauri::AppHandle, scale: u16) -> Result<(), String> {
     if !(80..=160).contains(&scale) { return Err("Dock size must be between 80 and 160 percent".into()); }
     let state = app.state::<AppState>();
@@ -210,13 +242,37 @@ async fn get_usage_metrics(
     .map_err(|_| "Statistics worker stopped".to_string())?
 }
 #[tauri::command]
+async fn get_usage_insights(app: tauri::AppHandle, days: u32) -> Result<crate::storage::UsageInsights,String> {
+    if ![7,30,90].contains(&days) {return Err("Choose 7, 30 or 90 days".into());}
+    let snapshots=app.state::<AppState>().snapshots.read().unwrap().clone();
+    tauri::async_runtime::spawn_blocking(move||{
+        lock(&app.state::<AppState>().store).usage_insights(days,&snapshots,Utc::now().timestamp())
+    }).await.map_err(|_|"Insights worker stopped".to_string())?
+}
+#[tauri::command]
+async fn get_recent_allowance(app: tauri::AppHandle, minutes: u32) -> Result<crate::storage::RecentAllowance, String> {
+    if !(1..=43200).contains(&minutes) { return Err("Choose 1 minute through 30 days".into()); }
+    let snapshots = app.state::<AppState>().snapshots.read().unwrap().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        lock(&app.state::<AppState>().store).recent_allowance(minutes, &snapshots, Utc::now().timestamp())
+    }).await.map_err(|_| "Recent allowance worker stopped".to_string())?
+}
+#[tauri::command]
+fn set_activity_duration(app: tauri::AppHandle, minutes: u32) -> Result<(), String> {
+    set_dock_minutes(&app, minutes)
+}
+#[tauri::command]
 fn get_recommendations(state: tauri::State<'_, AppState>, task: TaskClass) -> RecommendationSet {
+    let snapshots = state.snapshots.read().unwrap().clone();
+    let stats = state.advice_stats.read().unwrap().clone();
+    let catalog = state.catalog.read().unwrap().clone();
+    let reserve = lock(&state.settings).reserve_percent;
     recommendation::recommend(
         task,
-        &state.snapshots.read().unwrap(),
-        &state.advice_stats.read().unwrap(),
-        &state.catalog.read().unwrap(),
-        lock(&state.settings).reserve_percent,
+        &snapshots,
+        &stats,
+        &catalog,
+        reserve,
         Utc::now().timestamp(),
     )
 }
@@ -582,6 +638,7 @@ async fn maintenance(app: tauri::AppHandle, import: bool) {
     let outcome = tauri::async_runtime::spawn_blocking(move || {
         let state = a.state::<AppState>();
         let settings = lock(&state.settings).clone();
+        let allowance_snapshots = state.snapshots.read().unwrap().clone();
         // Cached account identity remains useful when sign-in has expired. Unknown
         // identities are explicitly marked and never used for quota attribution.
         let accounts = [Provider::Claude, Provider::Codex]
@@ -619,7 +676,10 @@ async fn maintenance(app: tauri::AppHandle, import: bool) {
         if let Ok(stats) = store.stats(None, None) {
             *state.stats.write().unwrap() = stats;
         }
-        if let Ok(summary) = store.dock_summary(settings.dock_minutes, Utc::now().timestamp()) {
+        let summary_time = Utc::now().timestamp();
+        if let Ok(mut summary) = store.dock_summary(settings.dock_minutes, summary_time) {
+            summary.allowance_usage = store.recent_allowance(settings.dock_minutes, &allowance_snapshots, summary_time)
+                .map(|recent| recent.windows).unwrap_or_default();
             let still_current = lock(&state.settings).dock_minutes == settings.dock_minutes;
             if still_current {
                 *state.dock.write().unwrap() = summary;
@@ -716,6 +776,9 @@ pub fn run() {
             open_pro_documentation,
             get_history,
             get_usage_metrics,
+            get_usage_insights,
+            get_recent_allowance,
+            set_activity_duration,
             get_recommendations,
             refresh_usage,
             import_history,
@@ -801,6 +864,8 @@ pub fn run() {
                         true,
                         None::<&str>,
                     )?,
+                    &tauri::menu::MenuItem::with_id(app, "show-dock", "Show dock", cfg!(windows), None::<&str>)?,
+                    &tauri::menu::MenuItem::with_id(app, "hide-dock", "Hide dock", cfg!(windows), None::<&str>)?,
                     &tauri::menu::MenuItem::with_id(
                         app,
                         "refresh",
@@ -827,18 +892,26 @@ pub fn run() {
                     "open" => {
                         let _ = platform::show_dashboard(app);
                     }
+                    "show-dock" => { let _ = set_dock_hidden(app, false); }
+                    "hide-dock" => { let _ = set_dock_hidden(app, true); }
                     "refresh" => request_refresh(app),
                     "quit" => app.exit(0),
                     _ => {}
                 })
                 .on_tray_icon_event(|tray, event| {
-                    if let tauri::tray::TrayIconEvent::Click {
-                        button: tauri::tray::MouseButton::Left,
-                        button_state: tauri::tray::MouseButtonState::Up,
-                        ..
-                    } = event
-                    {
-                        let _ = platform::show_dashboard(tray.app_handle());
+                    match event {
+                        tauri::tray::TrayIconEvent::DoubleClick { button: tauri::tray::MouseButton::Left, .. } => {
+                            #[cfg(windows)]
+                            { let _ = set_dock_hidden(tray.app_handle(), false); }
+                            #[cfg(not(windows))]
+                            { let _ = platform::show_dashboard(tray.app_handle()); }
+                        }
+                        #[cfg(not(windows))]
+                        tauri::tray::TrayIconEvent::Click {
+                            button: tauri::tray::MouseButton::Left,
+                            button_state: tauri::tray::MouseButtonState::Up, ..
+                        } => { let _ = platform::show_dashboard(tray.app_handle()); }
+                        _ => {}
                     }
                 })
                 .build(app)?;

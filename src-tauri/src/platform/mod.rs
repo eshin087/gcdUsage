@@ -114,6 +114,8 @@ pub fn update(app: &AppHandle, snapshots: &[QuotaSnapshot]) {
             .map(|(label, value, _)| format!("{label}: {value}"))
             .collect::<Vec<_>>()
             .join("\n");
+        #[cfg(windows)]
+        let full = format!("{full}\nDouble-click to show dock · Right-click for menu");
         let _ = tray.set_tooltip(Some(full));
         #[cfg(target_os = "macos")]
         {

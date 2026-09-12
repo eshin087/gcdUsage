@@ -176,6 +176,7 @@ export interface AppSettings {
   dockScale: number;
   dockMinutes: number;
   dockPreviews: boolean;
+  dockHidden: boolean;
 }
 export interface Recommendation {
   provider: Provider;
@@ -218,4 +219,37 @@ export interface SignInProgress {
   provider: Provider;
   phase: string;
   message: string;
+}
+
+export interface AllowanceForecast {
+  provider: Provider; label: string; state: string;
+  remaining: number | null; resetsAt: number | null;
+  ratePerHour: number | null; exhaustsAt: number | null;
+  remainingAtReset: number | null; observedSeconds: number;
+  sampleCount: number; points: {timestamp:number;remaining:number}[];
+}
+export interface UsageInsights {
+  days: number; current: UsageMetrics; previous: UsageMetrics;
+  activeDays: number; longestStreak: number; hourlyPrompts: number[];
+  unknownRequests: number; forecasts: AllowanceForecast[];
+}
+
+export interface RecentAllowanceWindow {
+  provider: Provider;
+  windowId: string;
+  label: string;
+  consumedPercent: number | null;
+  state: "observed" | "partial" | "learning" | "stale";
+  observedSeconds: number;
+  firstReadingAt: number | null;
+  lastReadingAt: number | null;
+  sampleCount: number;
+  gapCount: number;
+  resetCount: number;
+}
+export interface RecentAllowance {
+  minutes: number;
+  from: number;
+  to: number;
+  windows: RecentAllowanceWindow[];
 }

@@ -2,20 +2,26 @@
 
 **[Read the six-page user manual](output/pdf/GCD-Usage-Manual.pdf)** - setup, token accounting, history, synchronization and limitations.
 
+[Project status and maintainer references](docs/README.md).
+
 A lightweight desktop companion with usage meters, searchable prompt history, shared-folder synchronization, and local model advice.
 
-## Current local build
-Version 0.5.3 includes the D1 dock, O1 allowance overview, H2 single-line scrollable hover history and T2 duration picker. The Windows x64 package was built and installed locally after native tests and isolated dashboard checks. See [validation notes](docs/VALIDATION.md) for coverage and remaining manual checks. This local installer is not published; existing release downloads do not contain the redesign.
+## Current local build: 0.5.4
+Version 0.5.4 is installed locally on Windows x64. It adds resizing from all four dock corners, persistent Hide/Show with tray restoration, matching native themes and reddish reset labels, recent percentage consumption over the shared adjustable dock duration, Claude Code sign-in renewal, usage charts and allowance forecasts. The approved D1/O1/H2/T2 design remains in place.
+
+The authorized local build passed 99 Rust tests and 17 frontend tests, plus isolated native and dashboard checks. See [validation notes](docs/VALIDATION.md) and the [security review](docs/SECURITY_REVIEW.md) for measurements and remaining limits. GitHub contains the source and documentation; the local installer is not uploaded. Existing release downloads are older versions.
 
 ## Display
 
-- **Windows 11:** a readable native terminal dock with JetBrains Mono text. Drag anywhere on the dock to move it; click to open the dashboard. Hover a meter to browse recorded prompts above the dock; older entries load automatically while scrolling. It does not modify the Windows taskbar.
+- **Windows 11:** a readable native terminal dock with JetBrains Mono text. Drag the middle of the dock to move it or an unlocked corner to resize it. Click Hide to hide it until explicitly restored, including after a restart. Double-click the tray icon or right-click it and choose Show dock; the tray menu also opens the dashboard. Hover a meter to browse recorded prompts above the dock; older entries load automatically while scrolling. It does not modify the Windows taskbar.
 - **macOS:** compact menu-bar usage meters.
 - **Dashboard:** Overview, History, Model advice, and Settings. Closing the dashboard releases its browser while the native meters keep running.
 
-The default is a cream-on-charcoal Site terminal theme with regular JetBrains Mono typography and static ASCII graphics, percentage **left**, and 120% text size. Settings offers five themes, percentage used instead, and text sizes from 90% to 160%. Dock size is independent: use the 80%-160% slider in Settings or right-click the dock for size presets. Dashboard and hover text size remain separate. Native macOS menu-bar appearance follows macOS. Stale readings are marked; unavailable readings show an em dash and missing reset times show N/A.
+The default is a cream-on-charcoal Site terminal theme with regular JetBrains Mono typography and static ASCII graphics, percentage **left**, and 120% text size. Settings offers five themes, percentage used instead, and text sizes from 90% to 160%. Dock size is independent: use the 80%-160% slider in Settings or right-click the dock for size presets. Dashboard and hover text size remain separate. Saving a theme applies its palette to the Windows dock, hover history and duration picker. Native macOS menu-bar appearance follows macOS. Stale readings are marked; unavailable readings show an em dash and missing reset times show N/A.
 
-Settings groups appearance, connections, sync, and history/advice into separate sections. The default Windows dock is 1120 by 120 logical pixels before DPI scaling, with more inner padding, green values and fully spelled-out reset labels.
+Settings groups appearance, connections, sync, and history/advice into separate sections. The Windows dock uses 1120 by 144 logical pixels before DPI scaling in 0.5.4, adding room for recent consumption, with more inner padding, green usage values and fully spelled-out reddish reset labels.
+
+Each allowance card also shows observed recent percentage consumption. A change from 91% to 87% left is 4 percentage points used. Overview, Model advice and the dock share the adjustable token duration, including custom values from 1 minute to 30 days. Resets and gaps mark the observed amount as partial; unavailable readings stay unknown.
 
 The Windows activity card shows logged tokens for the last hour by default, without a model subtitle. Click it, or right-click the dock, to choose a preset or a themed custom duration. The custom picker offers 1-hour, 6-hour, 24-hour and 7-day presets plus a whole-number value in minutes, hours or days, bounded to 1 minute through 30 days. Claude also has a Fable weekly meter when its scoped allowance is available. All Claude meters share the latest Claude history.
 
@@ -23,11 +29,11 @@ Hover history uses one line per prompt: project, cleaned preview, time, a compac
 
 ## Install and set up
 
-Download the matching Windows x64/ARM64 or macOS Intel/Apple Silicon package from [Releases](https://github.com/eshin087/gcdUsage/releases). Windows installs per user. On macOS, drag the app into Applications.
+Use a manually validated package for your platform. Existing [Releases](https://github.com/eshin087/gcdUsage/releases) contain older Windows/macOS packages, not the local 0.5.4 installer. Windows installs per user. On macOS, drag the app into Applications.
 
 These are personal preview builds without trusted publisher signing. Your operating system may require first-launch approval. Updates are manual.
 
-Have Claude Code and Codex installed, open GCD Usage, and check the connection status. Existing sign-ins are checked first. When sign-in is needed, follow the provider's browser flow and the progress shown inside GCD Usage. Organization SSO is available for supported Claude accounts. Setup offers launch-at-login and an optional existing shared folder for combined history across computers.
+Have Claude Code and Codex installed, open GCD Usage, and check the connection status. Existing sign-ins are checked first. A current Claude Code helper renews expired access from its saved subscription refresh token and persists it in Claude Code's credential store. GCD Usage does not copy credentials into its database or sync. Signing out, revocation or missing renewable credentials still requires sign-in; a network failure retries without launching a browser. See [Claude Code's refresh environment variables](https://code.claude.com/docs/en/env-vars). When sign-in is needed, follow the provider's browser flow and the progress shown inside GCD Usage. Organization SSO is available for supported Claude accounts. Setup offers launch-at-login and an optional existing shared folder for combined history across computers.
 
 ## Explore usage
 
@@ -45,7 +51,9 @@ A published cap does not reveal an account balance. **Remaining browser Pro requ
 
 Missing historical fields remain unknown. Quota accounting measures drops in remaining allowance: 82% to 80% left is 2 percentage points consumed. Per-prompt impact is estimated only when suitable snapshots isolate a completed prompt. Overlapping or unseen activity stays unallocated; resets and collection gaps prevent reliable attribution.
 
-Model advice runs locally and never changes your model automatically. Personalized forecasts require sufficient completed history; sparse or stale data produces provisional guidance.
+Model advice adds 7-, 30- and 90-day trends, a model mix, measured cache reuse, active-day streaks, conversations, request intensity, and a weekday/hour heatmap. Earlier-period comparisons use the same duration. Missing token measurements stay unavailable.
+
+The allowance forecast uses recent provider percentage readings from the same account, device and reset window, independently of log token totals. It requires four readings spanning at least 30 minutes, with no gap over 15 minutes. It reports possible exhaustion before reset or projected remaining allowance at reset; sparse, stale or interrupted data produces a learning/unavailable state. This projection assumes the observed pace continues. Model recommendations remain separate, local and advisory; your model never changes automatically.
 
 ## Privacy and shared history
 

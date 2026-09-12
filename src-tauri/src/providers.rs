@@ -1,4 +1,5 @@
-//! Read-only provider adapters. Credentials and raw provider errors never leave this module.
+//! Provider allowance adapters. Claude Code owns credential renewal and storage.
+//! Credentials and raw provider errors never reach history, logs or the dashboard.
 use crate::models::*;
 use chrono::{DateTime, Utc};
 use serde_json::{json, Value};
@@ -16,6 +17,7 @@ use tokio::{
 
 const CLAUDE_USAGE_URL: &str = "https://api.anthropic.com/api/oauth/usage";
 const MAX_RESPONSE: usize = 2 * 1024 * 1024;
+const MAX_CLAUDE_TOKEN: usize = 8192;
 pub const CATALOG_VERSION: &str = "2026-09-07.1";
 
 #[derive(Debug)]
@@ -408,22 +410,36 @@ fn parse_claude_windows(value: &Value) -> Vec<QuotaWindow> {
 struct ClaudeCredentials {
     access_token: String,
     expires_at_ms: Option<i64>,
+    refresh_token: Option<String>,
+    scopes: Vec<String>,
 }
 impl ClaudeCredentials {
     fn is_expired_at(&self, now_ms: i64) -> bool {
         self.expires_at_ms.is_some_and(|expires| expires <= now_ms)
     }
 }
+fn valid_claude_token(token: &str) -> bool {
+    !token.is_empty() && token.len() <= MAX_CLAUDE_TOKEN
+        && token.bytes().all(|byte| (0x21..=0x7e).contains(&byte))
+}
+
 fn parse_claude_credentials(value: Value) -> Option<ClaudeCredentials> {
     value
         .pointer("/claudeAiOauth/accessToken")
         .and_then(Value::as_str)
-        .filter(|s| !s.is_empty())
+        .filter(|s| valid_claude_token(s))
         .map(|s| ClaudeCredentials {
             access_token: s.to_owned(),
             expires_at_ms: value
                 .pointer("/claudeAiOauth/expiresAt")
                 .and_then(Value::as_i64),
+            refresh_token: value.pointer("/claudeAiOauth/refreshToken").and_then(Value::as_str)
+                .filter(|s| valid_claude_token(s))
+                .map(str::to_owned),
+            scopes: value.pointer("/claudeAiOauth/scopes").and_then(Value::as_array)
+                .map(|scopes| scopes.iter().filter_map(Value::as_str)
+                    .filter(|s| !s.is_empty() && s.len() <= 128 && s.bytes().all(|c| c.is_ascii_alphanumeric() || b":_-".contains(&c)))
+                    .take(32).map(str::to_owned).collect()).unwrap_or_default(),
         })
 }
 
@@ -524,10 +540,175 @@ async fn claude_request(
         })
 }
 
+// Check support before passing refresh credentials: older helpers must not fall
+// through to interactive browser login. This scans only the executable, never logs.
+fn helper_supports_refresh(path: &Path) -> bool {
+    use std::io::Read;
+    let Ok(file)=std::fs::File::open(path) else {return false;};
+    let needle=b"CLAUDE_CODE_OAUTH_REFRESH_TOKEN";
+    let mut file=file.take(512*1024*1024);
+    let mut chunk=[0u8;32768];let mut tail=Vec::new();
+    loop {
+        let Ok(n)=file.read(&mut chunk) else {return false;};
+        if n==0 {return false;}
+        tail.extend_from_slice(&chunk[..n]);
+        if tail.windows(needle.len()).any(|w|w==needle) {return true;}
+        tail.drain(..tail.len().saturating_sub(needle.len()-1));
+    }
+}
+// Do not hand a credential-bearing helper ambient preload, debug, TLS, routing,
+// proxy, or telemetry configuration. Only OS/user-directory and locale variables
+// are inherited. The native helper is invoked by its resolved absolute path.
+fn renewal_os_environment(name: &std::ffi::OsStr) -> bool {
+    name.to_str().is_some_and(|name| matches!(
+        name.to_ascii_uppercase().as_str(),
+        "HOME" | "USERPROFILE" | "HOMEDRIVE" | "HOMEPATH" | "APPDATA" | "LOCALAPPDATA"
+        | "TEMP" | "TMP" | "TMPDIR" | "SYSTEMROOT" | "WINDIR"
+        | "USER" | "USERNAME" | "LOGNAME" | "LANG" | "LC_ALL" | "LC_CTYPE"
+    ))
+}
+
+fn configure_renewal_environment(
+    command: &mut Command,
+    settings: &AppSettings,
+    token: &str,
+    scopes: &[String],
+) {
+    let inherited: Vec<_> = std::env::vars_os()
+        .filter(|(name, _)| renewal_os_environment(name)).collect();
+    command.env_clear().envs(inherited)
+        .env("CLAUDE_CODE_OAUTH_REFRESH_TOKEN", token)
+        .env("CLAUDE_CODE_OAUTH_SCOPES", scopes.join(" "))
+        .env("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "1")
+        .env("DISABLE_TELEMETRY", "1")
+        .env("DISABLE_ERROR_REPORTING", "1")
+        .env("DISABLE_AUTOUPDATER", "1")
+        .env("NODE_TLS_REJECT_UNAUTHORIZED", "1");
+    #[cfg(windows)]
+    if let Some(system_root) = std::env::var_os("SystemRoot") {
+        let root = PathBuf::from(system_root);
+        if let Ok(path) = std::env::join_paths([root.join("System32"), root]) {
+            command.env("PATH", path);
+        }
+    }
+    #[cfg(unix)]
+    command.env("PATH", "/usr/bin:/bin:/usr/sbin:/sbin");
+    // Preserve the exact namespace spelling used by Claude's keychain lookup.
+    if let Some(home) = settings.claude_home.as_ref().map(std::ffi::OsString::from)
+        .or_else(|| std::env::var_os("CLAUDE_CONFIG_DIR")) {
+        command.env("CLAUDE_CONFIG_DIR", home);
+    }
+}
+
+fn renewal_command(path: &Path, settings: &AppSettings, credentials: &ClaudeCredentials) -> Command {
+    let mut command = Command::new(path);
+    // Keep auth first: Claude handles this as an account-only command. Global
+    // session flags can bypass that dispatcher and must not be prepended.
+    command.args(["auth", "login"]);
+    configure_renewal_environment(
+        &mut command, settings, credentials.refresh_token.as_deref().unwrap_or_default(),
+        &credentials.scopes,
+    );
+    command.current_dir(claude_home(settings))
+        .stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).kill_on_drop(true);
+    #[cfg(windows)]
+    command.creation_flags(0x08000000);
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        command.as_std_mut().process_group(0);
+    }
+    command
+}
+
+/// Reap the helper and stop its descendants on success, timeout or cancellation.
+/// This limits both credential lifetime and orphaned background resource use.
+struct RenewalProcess {
+    child: Child,
+    #[cfg(windows)]
+    job: windows::Win32::Foundation::HANDLE,
+    #[cfg(unix)]
+    process_group: i32,
+}
+#[cfg(windows)]
+unsafe impl Send for RenewalProcess {}
+impl Drop for RenewalProcess {
+    fn drop(&mut self) {
+        #[cfg(windows)]
+        unsafe { let _ = windows::Win32::Foundation::CloseHandle(self.job); }
+        #[cfg(unix)]
+        unsafe {
+            if self.process_group > 0 { libc::kill(-self.process_group, libc::SIGKILL); }
+        }
+        let _ = self.child.start_kill();
+    }
+}
+async fn run_renewal_command(mut command: Command, timeout: Duration) -> Result<bool, Failure> {
+    let child = command.spawn()
+        .map_err(|_| Failure::error("Could not start Claude's sign-in renewal."))?;
+    #[cfg(windows)]
+    let job = contain_child(&child)
+        .map_err(|_| Failure::error("Could not contain Claude's sign-in renewal."))?;
+    #[cfg(unix)]
+    let process_group = child.id()
+        .ok_or_else(|| Failure::error("Claude exited before renewing sign-in."))? as i32;
+    let mut process = RenewalProcess {
+        child,
+        #[cfg(windows)] job,
+        #[cfg(unix)] process_group,
+    };
+    match tokio::time::timeout(timeout, process.child.wait()).await {
+        Ok(Ok(status)) => Ok(status.success()),
+        _ => {
+            let _ = process.child.kill().await;
+            Ok(false)
+        }
+    }
+}
+
+async fn renew_claude(settings: &AppSettings, credentials: &ClaudeCredentials) -> Result<ClaudeCredentials,Failure> {
+    let token=credentials.refresh_token.as_deref().ok_or_else(||Failure::auth(
+        "Claude's saved sign-in cannot be renewed. Reconnect once to restore it."))?;
+    if credentials.scopes.is_empty() {
+        return Err(Failure::auth("Claude's saved sign-in is incomplete. Reconnect once to restore it."));
+    }
+    let path=discover_claude(settings).ok_or_else(||Failure::error(
+        "Install Claude Code or select its executable so the saved sign-in can renew automatically."))?;
+    let check=path.clone();
+    if !tokio::task::spawn_blocking(move||helper_supports_refresh(&check)).await.unwrap_or(false) {
+        return Err(Failure::error("Update Claude Code to enable automatic sign-in renewal."));
+    }
+    // The provider's documented non-interactive refresh path persists its own
+    // credentials. Secrets are passed only in the child environment, never args.
+    let command = renewal_command(&path, settings, credentials);
+    let saved=claude_credentials(settings).await.ok_or_else(||Failure::auth("Claude is signed out. Reconnect when you want to sign in again."))?;
+    if saved.access_token!=credentials.access_token && !saved.is_expired_at(Utc::now().timestamp_millis()) {return Ok(saved);}
+    if saved.refresh_token.as_deref()!=Some(token) {return Err(Failure::error("Claude sign-in changed during renewal. Checking again shortly."));}
+    let succeeded = run_renewal_command(command, Duration::from_secs(30)).await?;
+    let updated=claude_credentials(settings).await;
+    // A concurrent Claude Code session can renew successfully even if this helper
+    // loses the refresh race. Always reread the provider-owned store first.
+    if let Some(updated)=updated {
+        if !updated.is_expired_at(Utc::now().timestamp_millis())
+            && updated.access_token!=credentials.access_token {return Ok(updated);}
+    }
+    if succeeded {
+        return Err(Failure::auth("Claude did not retain a renewable sign-in. Reconnect to continue."));
+    }
+    Err(Failure::error("Claude sign-in renewal did not complete. It will retry automatically; reconnect if you signed out or access was revoked."))
+}
+
 async fn poll_claude(
     settings: &AppSettings,
 ) -> Result<(Option<String>, Vec<QuotaWindow>), Failure> {
-    let credentials = claude_credentials(settings).await.ok_or_else(|| Failure::auth("No Claude subscription sign-in found. Open Claude Code and run /login, then refresh here."))?;
+    static RENEWAL: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+    let _renewal = RENEWAL.lock().await;
+    let account = current_account_id(settings, Provider::Claude);
+    let mut credentials = claude_credentials(settings).await.ok_or_else(|| Failure::auth("No Claude subscription sign-in found. Reconnect to sign in through Claude Code."))?;
+    let expired=credentials.is_expired_at(Utc::now().timestamp_millis());
+    if expired {
+        credentials=renew_claude(settings,&credentials).await?;
+    }
     let client = reqwest::Client::builder()
         .connect_timeout(Duration::from_secs(8))
         .timeout(Duration::from_secs(20))
@@ -536,13 +717,13 @@ async fn poll_claude(
         .build()
         .map_err(|_| Failure::error("Could not initialize the secure Claude connection."))?;
     let mut response = claude_request(&client, &credentials).await?;
-    if response.status().as_u16() == 401 {
-        // Claude Code may have refreshed while this request was in flight. We never refresh it ourselves.
-        if let Some(updated) = claude_credentials(settings).await {
-            if updated.access_token != credentials.access_token {
-                response = claude_request(&client, &updated).await?;
-            }
-        }
+    if response.status().as_u16() == 401 && !expired {
+        // Never revive a credential removed by a manual logout.
+        let saved=claude_credentials(settings).await.ok_or_else(||Failure::auth("Claude is signed out. Reconnect when you want to sign in again."))?;
+        let updated=if saved.access_token!=credentials.access_token && !saved.is_expired_at(Utc::now().timestamp_millis()) {
+            saved
+        } else {renew_claude(settings,&saved).await?};
+        response=claude_request(&client,&updated).await?;
     }
     let status = response.status().as_u16();
     let retry = response
@@ -587,10 +768,10 @@ async fn poll_claude(
             "Claude returned an unexpected usage response.",
         ));
     }
-    Ok((
-        Some(current_account_id(settings, Provider::Claude)),
-        parse_claude_windows(&value),
-    ))
+    if current_account_id(settings, Provider::Claude) != account {
+        return Err(Failure::error("Claude account changed during the usage check. Checking again shortly."));
+    }
+    Ok((Some(account), parse_claude_windows(&value)))
 }
 
 async fn read_server_line<R: AsyncBufRead + Unpin>(reader: &mut R) -> Result<String, Failure> {
@@ -1099,6 +1280,122 @@ mod tests {
             "fixture-token"
         );
     }
+    #[test]
+    fn renewal_uses_only_saved_bounded_subscription_credentials() {
+        let c=parse_claude_credentials(json!({"claudeAiOauth":{"accessToken":"fixture",
+            "refreshToken":"refresh-fixture","scopes":["user:profile","user:inference","bad scope","bad\\n"],"expiresAt":0}})).unwrap();
+        assert_eq!(c.refresh_token.as_deref(),Some("refresh-fixture"));
+        assert_eq!(c.scopes,["user:profile","user:inference"]);
+        let c=parse_claude_credentials(json!({"claudeAiOauth":{"accessToken":"fixture","refreshToken":"bad\n"}})).unwrap();
+        assert!(c.refresh_token.is_none());
+        assert!(c.scopes.is_empty());
+    }
+    #[test]
+    fn credential_tokens_reject_header_injection_and_unbounded_values() {
+        for bad in ["", "with space", "line\r\nheader:value", "\0", "non-ascii-\u{e9}"] {
+            assert!(!valid_claude_token(bad));
+            assert!(parse_claude_credentials(json!({"claudeAiOauth":{"accessToken":bad}})).is_none());
+        }
+        assert!(valid_claude_token(&"a".repeat(MAX_CLAUDE_TOKEN)));
+        assert!(!valid_claude_token(&"a".repeat(MAX_CLAUDE_TOKEN + 1)));
+    }
+
+    #[test]
+    fn renewal_environment_excludes_injection_routes_and_arguments_exclude_secrets() {
+        use std::ffi::OsStr;
+        for allowed in ["SystemRoot", "USERPROFILE", "HOME", "LANG"] {
+            assert!(renewal_os_environment(OsStr::new(allowed)));
+        }
+        for denied in [
+            "NODE_OPTIONS", "BUN_OPTIONS", "LD_PRELOAD", "DYLD_INSERT_LIBRARIES",
+            "NODE_TLS_REJECT_UNAUTHORIZED", "SSL_CERT_FILE", "NODE_EXTRA_CA_CERTS",
+            "CLAUDE_CODE_CUSTOM_OAUTH_URL", "ANTHROPIC_BASE_URL", "HTTPS_PROXY",
+            "CLAUDE_CODE_DEBUG_LOGS_DIR", "OTEL_EXPORTER_OTLP_ENDPOINT", "PATH",
+            "CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CODE_OAUTH_REFRESH_TOKEN",
+        ] {
+            assert!(!renewal_os_environment(OsStr::new(denied)), "{denied}");
+        }
+        let credentials = parse_claude_credentials(json!({"claudeAiOauth":{
+            "accessToken":"access-fixture","refreshToken":"refresh-fixture",
+            "scopes":["user:profile"],"expiresAt":0
+        }})).unwrap();
+        let command = renewal_command(Path::new("fixture-helper"), &AppSettings::default(), &credentials);
+        let arguments: Vec<_> = command.as_std().get_args().collect();
+        assert_eq!(arguments, [OsStr::new("auth"), OsStr::new("login")]);
+        let environment: std::collections::HashMap<_, _> = command.as_std().get_envs().collect();
+        assert_eq!(environment.get(OsStr::new("CLAUDE_CODE_OAUTH_REFRESH_TOKEN")),
+            Some(&Some(OsStr::new("refresh-fixture"))));
+        assert_eq!(environment.get(OsStr::new("NODE_TLS_REJECT_UNAUTHORIZED")),
+            Some(&Some(OsStr::new("1"))));
+        assert!(!environment.contains_key(OsStr::new("NODE_OPTIONS")));
+    }
+
+    #[test]
+    fn refresh_capability_scan_handles_chunk_boundary_and_missing_support() {
+        let file = std::env::temp_dir().join(format!("gcd-refresh-scan-{}", uuid::Uuid::new_v4()));
+        let mut data = vec![b'x'; 32760];
+        data.extend_from_slice(b"CLAUDE_CODE_OAUTH_REFRESH_TOKEN");
+        std::fs::write(&file, &data).unwrap();
+        assert!(helper_supports_refresh(&file));
+        std::fs::write(&file, b"unsupported helper").unwrap();
+        assert!(!helper_supports_refresh(&file));
+        std::fs::remove_file(file).unwrap();
+    }
+
+    // Launched only by the parent test below. Uses fixture credentials and an
+    // isolated directory, never a installed provider or a network connection.
+    #[test]
+    #[ignore]
+    fn renewal_fixture_child() {
+        assert_eq!(std::env::var("CLAUDE_CODE_OAUTH_REFRESH_TOKEN").unwrap(), "fixture-only");
+        assert_eq!(std::env::var("NODE_TLS_REJECT_UNAUTHORIZED").unwrap(), "1");
+        assert!(std::env::var_os("NODE_OPTIONS").is_none());
+        assert!(std::env::var_os("CLAUDE_CODE_CUSTOM_OAUTH_URL").is_none());
+        let directory = PathBuf::from(std::env::var_os("CLAUDE_CONFIG_DIR").unwrap());
+        assert!(directory.file_name().unwrap().to_string_lossy().starts_with("gcd-renewal-test-"));
+        if std::env::var_os("GCD_RENEWAL_TEST_DELAY").is_some() {
+            std::thread::sleep(Duration::from_secs(10));
+        }
+        std::fs::write(directory.join("finished"), "ok").unwrap();
+    }
+
+    #[tokio::test]
+    async fn renewal_helper_environment_and_timeout_use_only_isolated_fixtures() {
+        let directory = std::env::temp_dir().join(format!("gcd-renewal-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let settings = AppSettings {
+            claude_home: Some(directory.to_string_lossy().into_owned()),
+            ..AppSettings::default()
+        };
+        let make_command = || {
+            let mut command = Command::new(std::env::current_exe().unwrap());
+            command.args(["--exact", "providers::tests::renewal_fixture_child", "--ignored", "--nocapture"]);
+            command.env("NODE_OPTIONS", "--require=must-not-load");
+            command.env("CLAUDE_CODE_CUSTOM_OAUTH_URL", "https://must-not-contact.invalid");
+            configure_renewal_environment(&mut command, &settings, "fixture-only", &["user:profile".into()]);
+            command.current_dir(&directory).stdin(Stdio::null())
+                .stdout(Stdio::null()).stderr(Stdio::null()).kill_on_drop(true);
+            #[cfg(windows)]
+            command.creation_flags(0x08000000);
+            #[cfg(unix)]
+            {
+                use std::os::unix::process::CommandExt;
+                command.as_std_mut().process_group(0);
+            }
+            command
+        };
+        assert!(run_renewal_command(make_command(), Duration::from_secs(5)).await.unwrap());
+        assert_eq!(std::fs::read_to_string(directory.join("finished")).unwrap(), "ok");
+        std::fs::remove_file(directory.join("finished")).unwrap();
+        let mut delayed = make_command();
+        delayed.env("GCD_RENEWAL_TEST_DELAY", "1");
+        let start = std::time::Instant::now();
+        assert!(!run_renewal_command(delayed, Duration::from_millis(300)).await.unwrap());
+        assert!(start.elapsed() < Duration::from_secs(5));
+        assert!(!directory.join("finished").exists());
+        std::fs::remove_dir(&directory).unwrap();
+    }
+
     #[test]
     fn cached_expiry_prevents_using_an_expired_sign_in() {
         let known = parse_claude_credentials(

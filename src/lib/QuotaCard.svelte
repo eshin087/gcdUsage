@@ -1,5 +1,6 @@
 <script lang="ts">
-  import type { MeterDisplay, Provider, QuotaSnapshot } from "./types";
+  import type { MeterDisplay, Provider, QuotaSnapshot, RecentAllowance } from "./types";
+  import RecentUsageValue from "./RecentUsageValue.svelte";
   import {
     countdown,
     isStale,
@@ -14,6 +15,9 @@
   export let snapshot: QuotaSnapshot | undefined;
   export let now: number;
   export let display: MeterDisplay = "remaining";
+  export let recent: RecentAllowance | null = null;
+  export let recentMinutes = 60;
+  export let recentPending = false;
   $: window = quotaWindow(snapshot, period);
   $: stale = isStale(snapshot, window, now);
   $: value = quotaPercent(window?.usedPercent, display);
@@ -74,5 +78,6 @@
   >
     {#if value != null}<div style:width={value + "%"}></div>{/if}
   </div>
-  <div class="quota-footer">{resetText}</div>
+  <div class="quota-footer" class:reset-time={value != null}>{resetText}</div>
+  <RecentUsageValue value={recent?.windows.find(row=>row.provider===provider && row.windowId===window?.id)} minutes={recentMinutes} loading={recentPending} compact />
 </article>

@@ -1,6 +1,6 @@
 //! Native, double-buffered dock and hover card. No resident webview or animation loop.
 use super::geometry::{
-    dock_cell, drag_origin, hover_decision, popup_origin, strip_origin, HoverDecision, Rect,
+    corner_at, resize_corner, Corner, DOCK_WIDTH, DOCK_HEIGHT, dock_cell, drag_origin, hover_decision, popup_origin, strip_origin, HoverDecision, Rect,
 };
 #[path = "duration_picker.rs"]
 mod duration_picker;
@@ -41,9 +41,8 @@ static DURATION: AtomicIsize = AtomicIsize::new(0);
 const REPAINT: u32 = WM_APP + 1;
 const SETTINGS_CHANGED: u32 = WM_APP + 2;
 const HOVER_TIMER: usize = 1;
+const HIDE_BUTTON: usize = 4101;
 
-const DOCK_WIDTH: f64 = 1120.0;
-const DOCK_HEIGHT: f64 = 120.0;
 const HISTORY_START: f64 = 114.0;
 const HISTORY_ROW: f64 = 38.0;
 const HISTORY_FOOTER: f64 = 48.0;
@@ -58,6 +57,19 @@ struct HistoryState {
     more: bool,
     loading: bool,
     failed: bool,
+}
+struct HistoryView {
+    total: usize,
+    offset: usize,
+    more: bool,
+    loading: bool,
+    failed: bool,
+}
+fn history_view(history: &HistoryState, requested: usize, visible: usize) -> (Vec<crate::dock::DockPrompt>, HistoryView) {
+    let offset = requested.min(history.prompts.len().saturating_sub(visible));
+    let prompts = history.prompts.iter().skip(offset).take(visible).cloned().collect();
+    (prompts, HistoryView {total: history.prompts.len(), offset, more: history.more,
+        loading: history.loading, failed: history.failed})
 }
 fn history_state() -> std::sync::MutexGuard<'static, HistoryState> {
     HISTORY.get_or_init(|| Mutex::new(HistoryState::default())).lock().unwrap_or_else(|e| e.into_inner())
@@ -105,6 +117,7 @@ struct Pointer {
     entered: Instant,
     inside: Instant,
     press: Option<(POINT, RECT, bool)>,
+    resize: Option<(POINT, Rect, Corner, u16)>,
 }
 fn pointer() -> std::sync::MutexGuard<'static, Pointer> {
     POINTER
@@ -113,6 +126,7 @@ fn pointer() -> std::sync::MutexGuard<'static, Pointer> {
                 entered: Instant::now(),
                 inside: Instant::now(),
                 press: None,
+                resize: None,
             })
         })
         .lock()
@@ -144,6 +158,11 @@ unsafe fn scale(window: HWND) -> f64 {
         / 100.0
 }
 unsafe fn dock_scale(window: HWND) -> f64 {
+    let r = window_rect(window);
+    if r.right > r.left { (r.right-r.left) as f64/DOCK_WIDTH }
+    else { requested_dock_scale(window) }
+}
+unsafe fn requested_dock_scale(window: HWND) -> f64 {
     let requested = GetDpiForWindow(window).max(96) as f64 / 96.0
         * APP.get().map(crate::app::dock_scale).unwrap_or(100) as f64 / 100.0;
     let work = monitor(window, None).rcWork;
@@ -217,8 +236,8 @@ pub fn create(app: AppHandle) {
             let dock = CreateWindowExW(
                 WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
                 name.as_ptr(),
-                wide("GCD Usage · drag anywhere · click to open").as_ptr(),
-                WS_POPUP,
+                wide("GCD Usage · drag to move · drag a corner to resize").as_ptr(),
+                WS_POPUP | WS_CLIPCHILDREN,
                 0,
                 0,
                 DOCK_WIDTH as i32,
@@ -248,7 +267,11 @@ pub fn create(app: AppHandle) {
             );
             POPUP.store(card as isize, Ordering::Release);
             position_window(dock, crate::strip_position(&app));
-            ShowWindow(dock, SW_SHOWNOACTIVATE);
+            CreateWindowExW(0,wide("BUTTON").as_ptr(),wide("Hide dock").as_ptr(),
+                WS_CHILD|WS_VISIBLE|windows_sys::Win32::UI::WindowsAndMessaging::BS_OWNERDRAW as u32,
+                0,0,1,1,dock,HIDE_BUTTON as HMENU,instance,null());
+            layout_hide_button(dock);
+            if !crate::app::dock_hidden(&app) {ShowWindow(dock, SW_SHOWNOACTIVATE);}
             let mut msg: MSG = std::mem::zeroed();
             while GetMessageW(&mut msg, null_mut(), 0, 0) > 0 {
                 let dialog = DURATION.load(Ordering::Acquire) as HWND;
@@ -288,7 +311,7 @@ pub fn shutdown() {
 }
 unsafe fn position_window(window: HWND, saved: Option<(i32, i32)>) {
     let info = monitor(window, saved.map(|(x, y)| POINT { x, y }));
-    let s = dock_scale(window);
+    let s = requested_dock_scale(window);
     let width = ((DOCK_WIDTH * s).round() as i32)
         .min(info.rcWork.right - info.rcWork.left)
         .max(1);
@@ -305,12 +328,13 @@ unsafe fn position_window(window: HWND, saved: Option<(i32, i32)>) {
     );
     SetWindowPos(window, HWND_TOPMOST, x, y, width, height, SWP_NOACTIVATE);
     rounded(window, width, height, (3.0 * s) as i32);
+    layout_hide_button(window);
     SetWindowTextW(
         window,
         wide(if locked() {
             "GCD Usage · position locked · click to open"
         } else {
-            "GCD Usage · drag anywhere · click to open"
+            "GCD Usage · drag to move · drag a corner to resize"
         })
         .as_ptr(),
     );
@@ -358,7 +382,10 @@ unsafe fn hover_tick() {
     GetCursorPos(&mut p);
     let r = window_rect(hwnd());
     let now = Instant::now();
-    let over = contains(r, p).then(|| dock_cell(p.x - r.left, r.right - r.left, dock_scale(hwnd())));
+    let on_hide=contains(window_rect(GetDlgItem(hwnd(),HIDE_BUTTON as i32)),p);
+    let over = (IsWindowVisible(hwnd()) != 0 && contains(r, p) && !on_hide
+        && corner_at(p.x-r.left,p.y-r.top,r.right-r.left,r.bottom-r.top,(12.*dock_scale(hwnd())).ceil() as i32).is_none())
+        .then(|| dock_cell(p.x - r.left, r.right - r.left, dock_scale(hwnd())));
     let visible = !popup().is_null() && IsWindowVisible(popup()) != 0;
     let on_card = visible && contains(window_rect(popup()), p);
     let decision = {
@@ -368,7 +395,7 @@ unsafe fn hover_tick() {
             over,
             on_card,
             visible,
-            state.press.is_some(),
+            state.press.is_some() || state.resize.is_some(),
             now.duration_since(state.entered).as_millis(),
             now.duration_since(state.inside).as_millis(),
         );
@@ -423,6 +450,7 @@ struct Palette {
     orange: u32,
     green: u32,
     purple: u32,
+    reset: u32,
 }
 unsafe fn palette() -> Palette {
     let mut theme = APP
@@ -447,41 +475,21 @@ unsafe fn palette() -> Palette {
             ColorTheme::Slate
         };
     }
-    if theme == ColorTheme::Light {
-        return Palette {
-            bg: rgb(244, 246, 250),
-            card: rgb(255, 255, 255),
-            border: rgb(212, 219, 229),
-            text: rgb(23, 31, 46),
-            muted: rgb(88, 101, 118),
-            orange: rgb(161, 74, 29),
-            green: rgb(28, 116, 93),
-            purple: rgb(104, 70, 173),
-        };
-    }
-    if theme == ColorTheme::Black {
-        return Palette {
-            bg: rgb(10, 10, 8), card: rgb(18, 17, 12), border: rgb(46, 43, 35),
-            text: rgb(242, 236, 220), muted: rgb(179, 172, 154),
-            orange: rgb(179, 172, 154), green: rgb(120, 187, 139), purple: rgb(179, 172, 154),
-        };
-    }
-    let (bg, card) = match theme {
-        ColorTheme::Slate => (rgb(18, 23, 30), rgb(26, 34, 45)),
-        ColorTheme::Midnight => (rgb(9, 13, 30), rgb(17, 24, 47)),
-        _ => (rgb(0, 0, 0), rgb(13, 16, 21)),
-    };
-    Palette {
-        bg,
-        card,
-        border: rgb(43, 50, 61),
-        text: rgb(239, 244, 251),
-        muted: rgb(151, 164, 183),
-        orange: rgb(242, 168, 120),
-        green: rgb(108, 221, 180),
-        purple: rgb(181, 159, 255),
-    }
+    palette_for_theme(theme)
 }
+fn palette_for_theme(theme: ColorTheme) -> Palette {
+    let (bg,card,border,text,muted,accent)=match theme {
+        ColorTheme::Light => (0xf8f9f7,0xffffff,0xe4e9e2,0x27332f,0x66726a,0x52785a),
+        ColorTheme::Slate => (0x15191f,0x1d232b,0x343e4b,0xe7edf5,0xa1afbe,0xa5c9e2),
+        ColorTheme::Midnight => (0x090f20,0x111b31,0x283754,0xe9edff,0xa5b1cf,0xb2befa),
+        _ => (0x0a0a08,0x12110c,0x2e2b23,0xf2ecdc,0xb3ac9a,0x6cb07c),
+    };
+    let color=|hex:u32| rgb((hex>>16)&255,(hex>>8)&255,hex&255);
+    Palette {bg:color(bg),card:color(card),border:color(border),text:color(text),
+        muted:color(muted),green:color(accent),orange:color(accent),purple:color(accent),
+        reset:color(if theme == ColorTheme::Light {0xa34842} else {0xd99a93})}
+}
+
 unsafe fn fill(dc: HDC, r: RECT, color: u32) {
     let b = CreateSolidBrush(color);
     FillRect(dc, &r, b);
@@ -566,8 +574,12 @@ unsafe fn paint(window: HWND, card: bool) {
     let p = palette();
     let s = if card { scale(hwnd()) } else { dock_scale(hwnd()) };
     let (mut summary, previews) = APP.get().map(crate::app::dock_summary).unwrap_or_default();
-    let history = if card { Some(history_state().clone()) } else { None };
-    if let Some(h) = &history { summary.prompts = h.prompts.clone(); }
+    // Clone only the visible page; release the history lock before GDI painting.
+    let history = if card {
+        let (prompts, view) = history_view(&history_state(), SCROLL.load(Ordering::Acquire), visible_rows(bounds.bottom, s));
+        summary.prompts = prompts;
+        Some(view)
+    } else { None };
     let cells = CELLS
         .get()
         .unwrap()
@@ -590,7 +602,7 @@ unsafe fn draw_surface(
     summary: &crate::dock::DockSummary,
     previews: bool,
     cells: &[(String, String, bool)],
-    history: Option<&HistoryState>,
+    history: Option<&HistoryView>,
 ) {
     let px = |v: f64| (v * s).round() as i32;
     let fsmall = font(px(if card { -12.0 } else { -13.0 }), 400);
@@ -653,8 +665,9 @@ unsafe fn draw_surface(
         let row_h = px(HISTORY_ROW).max(1);
         let start = px(HISTORY_START);
         let visible = visible_rows(bounds.bottom, s);
-        let max_scroll = rows.len().saturating_sub(visible);
-        let offset = SCROLL.load(Ordering::Acquire).min(max_scroll);
+        let total_rows = history.map(|h| h.total).unwrap_or(rows.len());
+        let max_scroll = total_rows.saturating_sub(visible);
+        let offset = history.map(|h| h.offset).unwrap_or_else(|| SCROLL.load(Ordering::Acquire).min(max_scroll));
         SCROLL.store(offset, Ordering::Release);
         let content_width = (bounds.right-px(44.0)).max(1);
         let x = |fraction:f64| px(22.0)+(content_width as f64*fraction) as i32;
@@ -670,7 +683,7 @@ unsafe fn draw_surface(
                 else if history.is_some_and(|h| h.failed) {"Unable to load history. Scroll to retry."}
                 else {"No recorded prompts yet"},r(135.,28.));
         }
-        for (i,row) in rows.iter().skip(offset).take(visible).enumerate() {
+        for (i,row) in rows.iter().skip(if history.is_some() {0} else {offset}).take(visible).enumerate() {
             let top=start+i as i32*row_h;
             let bottom=top+row_h-px(6.);
             fill(dc,RECT {left:px(14.),top,right:bounds.right-px(22.),bottom},p.card);
@@ -686,10 +699,10 @@ unsafe fn draw_surface(
             text(dc,fsmall,p.muted,&row.model_label(),cell(0.72,0.91,top,bottom));
             text_right(dc,fmedium,p.green,&row.tokens.map(compact).unwrap_or("—".into()),cell(0.91,1.,top,bottom));
         }
-        if rows.len()>visible || history.is_some_and(|h|h.more) {
+        if total_rows>visible || history.is_some_and(|h|h.more) {
             let track=RECT {left:bounds.right-px(12.),top:start,right:bounds.right-px(7.),bottom:bounds.bottom-px(HISTORY_FOOTER)};
             fill(dc,track,p.border);
-            let virtual_len=rows.len()+if history.is_some_and(|h|h.more) {40} else {0};
+            let virtual_len=total_rows+if history.is_some_and(|h|h.more) {40} else {0};
             let thumb_h=((track.bottom-track.top) as f64*visible as f64/virtual_len.max(1) as f64).round() as i32;
             let thumb_h=thumb_h.max(px(20.)).min((track.bottom-track.top).max(0));
             let travel=(track.bottom-track.top-thumb_h).max(0);
@@ -721,10 +734,18 @@ unsafe fn draw_surface(
                     } else { text(dc,flarge,p.text,main.trim(),r(42.,34.)); }
                     let reset=reset.trim();
                     if main.contains('%') {
-                        text_pair(dc,fsmall,p.muted,p.text,"reset ",reset,r(87.,21.));
+                        text_pair(dc,fsmall,p.reset,p.reset,"reset ",reset,r(87.,21.));
                     } else {
                         text(dc,fsmall,p.muted,if reset=="sign in" {"sign in needed"} else {reset},r(87.,21.));
                     }
+                    let id=["claude:300","claude:10080","claude-fable:10080","codex:10080"][i as usize];
+                    let recent=summary.allowance_usage.iter().find(|row|row.window_id==id);
+                    let (amount,label)=recent.and_then(|row|row.consumed_percent.map(|value|(value,row.state.as_str())))
+                        .map(|(value,state)| {
+                            let amount=if value>0.0 && value<0.01 {"<0.01%".into()} else {format!("{}%",format!("{value:.2}").trim_end_matches('0').trim_end_matches('.'))};
+                            (amount,format!(" {} / {}",if state=="partial" {"observed"} else {"used"},interval(summary.minutes)))
+                        }).unwrap_or_else(||("—".into(),if summary.updated_at.is_some() {format!(" usage / {}",interval(summary.minutes))} else {" usage".into()}));
+                    text_pair(dc,fsmall,p.green,p.muted,&amount,&label,r(112.,20.));
                 }
             } else {
                 let label=if summary.updated_at.is_some() {format!("tokens / {}",interval(summary.minutes).to_uppercase())} else {"tokens".into()};
@@ -740,9 +761,29 @@ unsafe fn draw_surface(
 }
 
 #[cfg(test)]
+fn native_gui_counts() -> (u32, u32) {
+    #[link(name = "user32")]
+    extern "system" { fn GetGuiResources(process: *mut std::ffi::c_void, flags: u32) -> u32; }
+    unsafe { (GetGuiResources(-1isize as *mut _, 0), GetGuiResources(-1isize as *mut _, 1)) }
+}
+
+#[cfg(test)]
 mod render_tests {
     use super::*;
     use crate::dock::{DockModel, DockPrompt, DockSummary};
+    #[test]
+    fn hover_paint_copies_only_the_visible_rows_of_a_long_scroll_session() {
+        let history = HistoryState {prompts:(0..10000).map(|i| DockPrompt {
+            context:"Synthetic".into(), id:i.to_string(), provider:"claude".into(),
+            preview:"Bounded visible row".into(), timestamp:Some(i), tokens:Some(0),
+            models:"Synthetic model".into(), status:"completed".into(), browser:false,
+        }).collect(),more:true,..Default::default()};
+        let (rows,view)=history_view(&history,5000,12);
+        assert_eq!(rows.len(),12);assert_eq!(view.total,10000);assert_eq!(view.offset,5000);
+        assert_eq!(rows[0].id,"5000");assert_eq!(rows[11].id,"5011");
+        let (rows,view)=history_view(&history,usize::MAX,12);
+        assert_eq!(view.offset,9988);assert_eq!(rows.last().unwrap().id,"9999");
+    }
     #[test]
     fn native_renderer_handles_scaled_history_privacy_and_unknown_data() {
         assert!(terminal_font_available(), "Bundled native font must register");
@@ -802,6 +843,13 @@ mod render_tests {
                 ]),
                 models,
                 prompts,
+                allowance_usage: ["claude:300","claude:10080","claude-fable:10080","codex:10080"].iter().enumerate().map(|(i,id)|
+                    crate::storage::RecentAllowanceWindow {
+                        provider: if i==3 {crate::models::Provider::Codex} else {crate::models::Provider::Claude},
+                        window_id:(*id).into(), label:(*id).into(), consumed_percent:if i==2 {None} else {Some([4.2,1.3,0.0,0.8][i])},
+                        state:if i==1 {"partial".into()} else {"observed".into()},
+                        observed_seconds:1800, first_reading_at:None,last_reading_at:None,sample_count:16,gap_count:0,reset_count:0,
+                    }).collect(),
             };
             let cells = vec![
                 ("Claude · 5h".into(), "78% left · 3h 42m".into(), false),
@@ -809,14 +857,17 @@ mod render_tests {
                 ("Claude · Fable".into(), "82% left · 5d 2h".into(), false),
                 ("Codex · week".into(), "92% left · 5d 2h".into(), false),
             ];
-            for (name, card, s, previews, index, small) in [
-                ("dock", false, 1.0, true, -1, false),
-                ("claude-hover", true, 1.2, true, 0, false),
-                ("codex-hover", true, 1.2, true, 3, false),
-                ("activity-hover", true, 1.2, true, 4, false),
-                ("private-hover", true, 1.6, false, 0, true),
-                ("small-font", false, 0.8, true, -1, false),
-                ("large-font", false, 1.6, true, -1, false),
+            for (name, card, s, previews, index, small, theme) in [
+                ("dock", false, 1.0, true, -1, false, ColorTheme::Black),
+                ("dock-light", false, 1.0, true, -1, false, ColorTheme::Light),
+                ("dock-slate", false, 1.0, true, -1, false, ColorTheme::Slate),
+                ("dock-midnight", false, 1.0, true, -1, false, ColorTheme::Midnight),
+                ("claude-hover", true, 1.2, true, 0, false, ColorTheme::Black),
+                ("codex-hover", true, 1.2, true, 3, false, ColorTheme::Black),
+                ("activity-hover", true, 1.2, true, 4, false, ColorTheme::Black),
+                ("private-hover", true, 1.6, false, 0, true, ColorTheme::Black),
+                ("small-font", false, 0.8, true, -1, false, ColorTheme::Black),
+                ("large-font", false, 1.6, true, -1, false, ColorTheme::Black),
             ] {
                 HOVER.store(index, Ordering::Release);
                 SCROLL.store(0, Ordering::Release);
@@ -850,7 +901,7 @@ mod render_tests {
                         right: w,
                         bottom: h,
                     },
-                    palette(),
+                    palette_for_theme(theme),
                     s,
                     card,
                     &summary,
@@ -964,8 +1015,48 @@ unsafe extern "system" fn cardproc(window: HWND, msg: u32, w: WPARAM, l: LPARAM)
         _ => DefWindowProcW(window, msg, w, l),
     }
 }
+unsafe fn layout_hide_button(window: HWND) {
+    let s=dock_scale(window);
+    let r=window_rect(window);
+    SetWindowPos(GetDlgItem(window,HIDE_BUTTON as i32),null_mut(),
+        r.right-r.left-(68.*s).round() as i32,(12.*s).round() as i32,
+        (50.*s).round() as i32,(24.*s).round() as i32,SWP_NOZORDER|SWP_NOACTIVATE);
+}
+unsafe fn finish_resize(window: HWND) -> bool {
+    let resize=pointer().resize.take();
+    if let Some((_,_,_,percent))=resize {
+        if let Some(app)=APP.get() {
+            let r=window_rect(window);
+            if crate::app::set_dock_geometry(app,percent,r.left,r.top).is_err() {
+                position_window(window,crate::strip_position(app));
+            }
+        }
+        return true;
+    }
+    false
+}
 unsafe extern "system" fn wndproc(window: HWND, msg: u32, w: WPARAM, l: LPARAM) -> LRESULT {
     match msg {
+        WM_COMMAND if w & 0xffff == HIDE_BUTTON => {
+            hide_card();
+            if let Some(app)=APP.get() { let _=crate::app::set_dock_hidden(app,true); }
+            0
+        }
+        WM_DRAWITEM if w == HIDE_BUTTON => {
+            let item=&*(l as *const windows_sys::Win32::UI::Controls::DRAWITEMSTRUCT);
+            let p=palette(); let s=dock_scale(window); let f=font((-12.*s).round() as i32,400);
+            round(item.hDC,item.rcItem,p.bg,p.border,0);
+            SetBkMode(item.hDC,TRANSPARENT as i32);
+            let mut r=item.rcItem;r.left+=(8.*s).round() as i32;
+            text(item.hDC,f,p.muted,"Hide",r);DeleteObject(f);1
+        }
+        WM_SIZE => {layout_hide_button(window);0}
+        WM_SETCURSOR if !locked() => {
+            let mut p:POINT=std::mem::zeroed();GetCursorPos(&mut p);let r=window_rect(window);
+            if let Some(c)=corner_at(p.x-r.left,p.y-r.top,r.right-r.left,r.bottom-r.top,(12.*dock_scale(window)).ceil() as i32) {
+                SetCursor(LoadCursorW(null_mut(),if matches!(c,Corner::TopLeft|Corner::BottomRight) {IDC_SIZENWSE} else {IDC_SIZENESW}));1
+            } else {DefWindowProcW(window,msg,w,l)}
+        }
         WM_PAINT => {
             paint(window, false);
             0
@@ -976,13 +1067,29 @@ unsafe extern "system" fn wndproc(window: HWND, msg: u32, w: WPARAM, l: LPARAM) 
             hide_card();
             let mut p: POINT = std::mem::zeroed();
             GetCursorPos(&mut p);
-            pointer().press = Some((p, window_rect(window), false));
+            let r=window_rect(window);
+            let corner=corner_at(p.x-r.left,p.y-r.top,r.right-r.left,r.bottom-r.top,(12.*dock_scale(window)).ceil() as i32);
+            if let Some(c)=corner.filter(|_|!locked()) {
+                let percent=APP.get().map(crate::app::dock_scale).unwrap_or(100);
+                pointer().resize=Some((p,convert(r),c,percent));
+            } else {pointer().press = Some((p,r,false));}
             SetCapture(window);
             0
         }
         WM_MOUSEMOVE => {
             let mut p: POINT = std::mem::zeroed();
             GetCursorPos(&mut p);
+            let resize=pointer().resize;
+            if let Some((origin,start,corner,_))=resize {
+                let work=convert(monitor(window,None).rcWork);
+                let dpi=GetDpiForWindow(window).max(96) as f64/96.;
+                let (next,percent)=resize_corner(start,corner,(p.x-origin.x,p.y-origin.y),work,dpi);
+                pointer().resize=Some((origin,start,corner,percent));
+                SetWindowPos(window,HWND_TOPMOST,next.left,next.top,next.right-next.left,next.bottom-next.top,SWP_NOACTIVATE);
+                rounded(window,next.right-next.left,next.bottom-next.top,0);
+                InvalidateRect(window,null(),0);
+                return 0;
+            }
             let movement = {
                 let mut state = pointer();
                 if let Some((start, r, dragged)) = state.press.as_mut() {
@@ -1019,6 +1126,7 @@ unsafe extern "system" fn wndproc(window: HWND, msg: u32, w: WPARAM, l: LPARAM) 
             0
         }
         WM_LBUTTONUP => {
+            if finish_resize(window) {ReleaseCapture();return 0;}
             let press = pointer().press.take();
             ReleaseCapture();
             if press.is_some_and(|(_, _, dragged)| dragged) {
@@ -1035,6 +1143,7 @@ unsafe extern "system" fn wndproc(window: HWND, msg: u32, w: WPARAM, l: LPARAM) 
             0
         }
         WM_CAPTURECHANGED => {
+            if finish_resize(window) {return 0;}
             let press = pointer().press.take();
             if press.is_some_and(|(_, _, dragged)| dragged) {
                 save_position();
@@ -1076,6 +1185,10 @@ unsafe extern "system" fn wndproc(window: HWND, msg: u32, w: WPARAM, l: LPARAM) 
             if !dialog.is_null() {PostMessageW(dialog,WM_THEMECHANGED,0,0);}
             hide_card();
             position_window(window, APP.get().and_then(crate::strip_position));
+            let hidden=APP.get().is_some_and(crate::app::dock_hidden);
+            ShowWindow(window,if hidden {SW_HIDE} else {SW_SHOWNOACTIVATE});
+            if hidden {KillTimer(window,HOVER_TIMER);}
+            RedrawWindow(window,null(),null_mut(),RDW_INVALIDATE|RDW_ALLCHILDREN);
             InvalidateRect(window, null(), 0);
             0
         }

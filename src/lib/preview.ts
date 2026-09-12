@@ -34,6 +34,7 @@ const settings: AppSettings = {
   dockScale: 100,
   dockMinutes: 60,
   dockPreviews: true,
+  dockHidden: false,
 };
 const prompts = [
   "Add keyboard navigation to the command palette and preserve the selected item.",
@@ -114,14 +115,14 @@ const overview: Overview = {
       status: "connected",
       windows: [
         {
-          id: "five_hour",
+          id: "claude:300",
           label: "Five hour",
           durationMinutes: 300,
           usedPercent: 42,
           resetsAt: now + 8460,
         },
         {
-          id: "weekly",
+          id: "claude:10080",
           label: "Weekly",
           durationMinutes: 10080,
           usedPercent: 31,
@@ -140,7 +141,7 @@ const overview: Overview = {
       status: "connected",
       windows: [
         {
-          id: "weekly",
+          id: "codex:10080",
           label: "Weekly",
           durationMinutes: 10080,
           usedPercent: 57,
@@ -234,6 +235,58 @@ export async function previewInvoke<T>(
   switch (command) {
     case "get_overview":
       return structuredClone(overview) as T;
+    case "set_activity_duration": {
+      const minutes=Number(args.minutes);
+      if (!Number.isInteger(minutes) || minutes<1 || minutes>43200) throw new Error("Choose 1 minute through 30 days");
+      settings.dockMinutes=minutes;
+      return undefined as T;
+    }
+    case "get_recent_allowance": {
+      const minutes=Number(args.minutes);
+      if (!Number.isInteger(minutes) || minutes<1 || minutes>43200) throw new Error("Choose 1 minute through 30 days");
+      return {minutes,from:now-minutes*60,to:now,windows:overview.snapshots.flatMap(snapshot=>snapshot.windows.map((window,index)=>({
+        provider:snapshot.provider,windowId:window.id,label:window.label,
+        consumedPercent:minutes<2?null:Number(((snapshot.provider==="codex"?0.8:index===0?4.2:1.3)*Math.min(minutes,360)/60).toFixed(2)),
+        state:minutes<2?"learning":minutes>360?"partial":"observed",
+        observedSeconds:minutes<2?0:Math.max(0,(minutes>360?360:minutes)*60-120),
+        firstReadingAt:now-(minutes>360?360:minutes)*60,lastReadingAt:now-120,
+        sampleCount:Math.max(1,Math.floor(Math.min(minutes,360)/2)),gapCount:minutes>360?1:0,resetCount:0
+      })))} as T;
+    }
+    case "get_usage_insights": {
+      const days=Number(args.days);
+      const current=await previewInvoke<UsageMetrics>("get_usage_metrics",{range:{from:now-days*86400,to:now}});
+      current.bucketSeconds=86400;
+      current.activity=Array.from({length:days},(_,i)=>({
+        timestamp:now-(days-i)*86400,prompts:12+(i*17)%35,requests:120+(i*53)%190,
+        tokens:Math.round((0.65+Math.sin(i*.7)*.25+(i%5)*.1)*1300000)
+      }));
+      current.stats.promptCount=current.activity.reduce((n,p)=>n+p.prompts,0);
+      current.stats.requestCount=current.activity.reduce((n,p)=>n+p.requests,0);
+      current.stats.totalTokens=current.activity.reduce((n,p)=>n+p.tokens,0);
+      current.stats.tokenTotals={input:current.stats.totalTokens*.25,cacheRead:current.stats.totalTokens*.61,
+        cacheWrite:0,output:current.stats.totalTokens*.14,reasoning:null};
+      current.stats.backgroundRequests=Math.round(current.stats.requestCount*.12);
+      current.activePromptCount=current.stats.promptCount;
+      current.stats.p75Tokens=61000;
+      const weights=[.46,.28,.16,.1],labels=["gpt-6-astra","claude-fable","gpt-5.6-sol","claude-sonnet"];
+      current.stats.modelStats=labels.map((model,i)=>({provider:i%2?"claude":"codex",model,effort:"high",
+        promptCount:Math.round(current.stats.promptCount*weights[i]),completedPrompts:100,
+        requestCount:Math.round(current.stats.requestCount*weights[i]),totalTokens:Math.round(current.stats.totalTokens*weights[i]),
+        medianTokens:18000,p75Tokens:61000,estimatedQuotaPerPrompt:null,quotaSampleCount:0}));
+      const previous=structuredClone(current);previous.stats.totalTokens=Math.round(current.stats.totalTokens*.79);
+      previous.range={from:now-days*2*86400,to:now-days*86400};
+      return {days,current,previous,activeDays:Math.max(1,days-2),longestStreak:Math.min(days,12),
+        hourlyPrompts:Array.from({length:168},(_,i)=>i%24>=8 && i%24<22 ? (i*7+3)%24 : 0),
+        unknownRequests:0,forecasts:[
+          {provider:"claude",label:"Claude · 5h",state:"before_reset",remaining:24,resetsAt:now+10800,
+            ratePerHour:18,exhaustsAt:now+4800,remainingAtReset:0,observedSeconds:3600,sampleCount:31,
+            points:Array.from({length:7},(_,i)=>({timestamp:now-3600+i*600,remaining:42-i*3}))},
+          {provider:"codex",label:"Codex · weekly",state:"after_reset",remaining:79,resetsAt:now+259200,
+            ratePerHour:.18,exhaustsAt:null,remainingAtReset:66,observedSeconds:3600,sampleCount:31,
+            points:Array.from({length:7},(_,i)=>({timestamp:now-3600+i*600,remaining:79.18-i*.03}))}
+        ]} as T;
+    }
     case "get_usage_metrics": {
       const range = args.range as MetricsRange;
       const selected = items.filter(

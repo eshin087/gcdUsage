@@ -35,6 +35,9 @@ export const api = {
   overview: () => call<Overview>("get_overview"),
   metrics: (range: MetricsRange) =>
     call<UsageMetrics>("get_usage_metrics", { range }),
+  recentAllowance: (minutes: number) => call<import("./types").RecentAllowance>("get_recent_allowance", { minutes }),
+  setActivityDuration: (minutes: number) => call<void>("set_activity_duration", { minutes }),
+  insights: (days: number) => call<import("./types").UsageInsights>("get_usage_insights", { days }),
   history: (filter: HistoryFilter) =>
     call<HistoryPage>("get_history", { filter }),
   recommendations: (task: TaskClass) =>

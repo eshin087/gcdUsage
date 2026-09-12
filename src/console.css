@@ -108,3 +108,58 @@ main{padding:30px 36px;max-width:1500px}.page-header{border:0;margin-bottom:16px
 .claude-reconnect{width:75%}
 @media(max-width:1200px){.allowance-overview .quota-grid{grid-template-columns:repeat(2,minmax(0,1fr));row-gap:28px}.allowance-overview .quota-card:nth-child(3){border-left:0;padding-left:0}.allowance-overview .quota-card:nth-child(2){padding-right:0}.claude-reconnect{width:100%}}
 @media(max-width:700px){.allowance-overview{padding:18px}.allowance-overview .quota-grid{grid-template-columns:1fr}.allowance-overview .quota-card{padding:18px 0 0!important;border-left:0;border-top:1px solid var(--line)}.allowance-overview .quota-card:first-child{border-top:0;padding-top:0!important}}
+
+/* Local activity insights follow the same themes as the native dock. */
+.usage-insights{margin-bottom:42px}
+.insights-heading,.insight-panel-heading{display:flex;align-items:center;justify-content:space-between;gap:18px}
+.insights-heading{margin-bottom:24px}.insights-heading h2{font-size:1.5rem;font-weight:400}
+.insight-periods{display:flex;gap:4px;flex-shrink:0}.insight-periods button{background:var(--bg);border:1px solid var(--line);padding:7px 11px;font-size:.7rem}
+.insight-periods button.selected{background:var(--ink);color:var(--bg)}
+.insight-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:22px;margin-bottom:28px}
+.insight-stats article{border-top:1px solid var(--line);padding-top:16px;min-width:0}
+.insight-stats span,.insight-stats small{display:block;color:var(--muted);font-size:.7rem}
+.insight-stats strong{display:block;font-size:1.8rem;font-weight:400;color:var(--accent);margin:9px 0}
+.insight-stats em{font-style:normal;font-size:.85rem;color:var(--muted)}
+.insights-two{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:24px;margin-bottom:24px}
+.insight-panel{border:1px solid var(--line);background:var(--bg);padding:22px;min-width:0}
+.insight-panel h3{font-size:.92rem;font-weight:400}.insight-panel-heading{margin-bottom:18px;flex-wrap:wrap}
+.insight-trend{display:block;width:100%;min-height:190px}
+.usage-insights svg text{fill:var(--muted);font-family:inherit;font-size:11px}
+.chart-grid{stroke:var(--line);stroke-width:1;fill:none}.chart-line{stroke:var(--accent);stroke-width:2;fill:none;vector-effect:non-scaling-stroke}
+.chart-point{fill:var(--accent);opacity:.55}.chart-point:hover{opacity:1;r:6px}
+.model-mix{display:grid;gap:16px}.mix-row>div:first-child{display:flex;justify-content:space-between;gap:14px;font-size:.72rem}
+.mix-row>div>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.mix-row strong{font-weight:400;white-space:nowrap;color:var(--accent)}
+.mix-track{height:6px;background:var(--surface);margin:7px 0}.mix-track>span{display:block;height:100%;background:var(--accent)}
+.mix-row small{font-size:.62rem;color:var(--muted)}
+.hours-grid{display:grid;grid-template-columns:38px repeat(24,minmax(0,1fr));gap:4px;align-items:center;margin:16px 0}
+.hour-tick{font-size:.57rem;white-space:nowrap;color:var(--muted)}.day-tick{font-size:.62rem;color:var(--muted)}
+.heat-cell{aspect-ratio:1.15;border:1px solid var(--line);min-height:12px}
+.insight-observations{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:24px;margin:24px 0}
+.insight-observations p{font-size:.72rem;color:var(--muted)}.insight-observations strong{font-size:1.1rem;color:var(--ink);font-weight:400;display:block;margin-bottom:6px}
+.forecast-heading{margin:34px 0 18px}.forecast-heading h2{font-size:1.2rem;font-weight:400}.forecast-heading p{font-size:.74rem;color:var(--muted);margin-top:7px}
+.allowance-forecasts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}
+.allowance-forecast .insight-panel-heading>span{font-size:.78rem;color:var(--accent)}
+.forecast-verdict{display:block;font-size:.88rem;font-weight:400;margin-bottom:16px;line-height:1.65}
+.allowance-forecast svg{display:block;width:100%;height:auto;max-height:190px}.projection{stroke-dasharray:5 5;opacity:.65}
+.forecast-risk{border-left:3px solid var(--danger)}.forecast-risk .forecast-verdict{color:var(--danger)}
+.forecast-footnote{margin-top:14px}.insights-notice{padding:24px 0;color:var(--muted);font-size:.8rem}
+.next-model-heading{margin:0 0 18px;font-weight:400;font-size:1.2rem}.insights-pending{opacity:.55;pointer-events:none}
+@media(max-width:1200px){.insights-two{grid-template-columns:1fr}.insight-stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:850px){.insights-heading{align-items:flex-start;flex-wrap:wrap}.allowance-forecasts{grid-template-columns:1fr}.insight-panel{padding:16px}.hours-grid{gap:2px}.insight-observations{grid-template-columns:1fr;gap:12px}}
+
+.allowance-duration{margin:0 0 24px}.recent-duration-options{display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin-bottom:10px}
+.recent-duration-options>span{font-size:.75rem;color:var(--muted);margin-right:12px}.recent-duration-options button{border:1px solid var(--line);background:var(--bg);padding:7px 12px;font-size:.7rem}
+.recent-duration-options button.selected{background:var(--ink);color:var(--bg)}.recent-duration-options button:disabled{opacity:.5}
+.recent-custom-duration{display:flex;gap:12px;align-items:end;flex-wrap:wrap;margin:14px 0}.recent-custom-duration label{display:grid;gap:6px;font-size:.72rem;color:var(--muted)}
+.recent-custom-duration input{width:130px}.recent-custom-duration select{min-width:115px}
+.recent-usage-value{margin-top:18px;border-top:1px solid var(--line);padding-top:13px}.recent-usage-value p{font-size:.75rem;line-height:1.65;color:var(--ink);margin:0 0 4px}
+.recent-usage-value strong{font-weight:400;color:var(--accent)}.recent-usage-value p>span{color:var(--muted)}
+.recent-usage-value small{display:block;font-size:.66rem;color:var(--muted);line-height:1.6}
+.recent-usage-value.partial{border-top-style:dashed}.recent-allowance-section{margin:32px 0}
+.recent-allowance-section>h2{font-size:1.2rem;font-weight:400;margin-bottom:18px}.recent-allowance-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;margin-bottom:14px}
+@media(max-width:850px){.recent-allowance-grid{grid-template-columns:1fr}.recent-custom-duration{align-items:stretch}.recent-custom-duration label{flex:1}}
+
+/* Reset timing has its own restrained red, separate from allowance accents. */
+:root{--reset:#d99a93}
+:root[data-theme="light"]{--reset:#a34842}
+.reset-time,.allowance-overview .quota-footer.reset-time{color:var(--reset)}

@@ -1,6 +1,8 @@
 # Validation
 
-## Current release: 0.5.0
+See [current status](PROJECT_STATUS.md) for the latest source, installed version and pending delivery. Results below are dated evidence; older CI entries are historical and do not authorize new GitHub builds.
+
+## Historical release: 0.5.0
 
 The Windows installer is approximately 2.8 MiB and its executable 6.6 MiB. With the dashboard closed, this host measured 35.6-37.0 MiB working set and about 0.04% of total host CPU over a 59-second sample. Helper/import peaks are separate; this is one machine and interval, not a universal guarantee.
 
@@ -83,3 +85,46 @@ After the isolated dashboard closed, no child processes remained. Over 57.8 seco
 The 3,340,622-byte installer completed successfully and the installed app reports 0.5.3. Its executable matches the tested release byte-for-byte except Tauri's documented three-byte UNK-to-NSS bundle marker. Before normal startup, existing settings and history record counts were unchanged; the real database passed read-only quick_check. A local rollback copy was retained. The installed app was launched normally. No LSASS Application Error event was found during this update.
 
 The computer-use helper could not start because of its sandbox setup error. Native message/control tests and render review passed, but end-to-end mouse-wheel paging, unit-menu keyboard interaction and multi-monitor DPI transitions still need manual review. SQLite cursor tests cover 105 records, tied timestamps, new imports, provider filtering and duplicate prevention. macOS and Windows ARM64 were not built. No installer was uploaded, no GitHub build ran, and Actions remains disabled.
+
+## 0.5.4 source and frontend verification - September 11
+The requested corner resizing, persistent hide/show, native theme palettes, Claude renewal, usage insights and allowance forecasting are implemented in source. Source version fields agree on 0.5.4; the installed app remains 0.5.3. No native build or installation was started for this update.
+
+Svelte/TypeScript checks report zero errors or warnings, all 15 frontend tests pass, and the production frontend bundle builds. Tests include preserving tray hiding and corner size changes while the dashboard has unrelated unsaved settings. Synthetic browser checks passed at 1600, 1100 and 760 pixels across Black, Light, Slate and Midnight, plus enlarged text. They exercised 7/30/90-day periods, token/prompt chart switching, 168 heatmap cells, model mix, forecasts, unknown totals, stale and learning states, and load errors. No page JavaScript errors were observed. Screenshots were reviewed; the six-page manual was regenerated and every page visually reviewed.
+
+Nine changed Rust files parse without syntax errors. This is not Rust type checking or execution. Native tests were added for opposite-corner anchoring and monitor-fitted persistence, hidden-setting serialization, renewal input validation, forecast rate/reset/account/gap boundaries, and unknown token handling. Native render cases now include all four themes. These Rust tests and renders remain unexecuted until an authorized native build.
+
+Still required: Rust compilation and tests, isolated native hide/tray restoration and restart checks, corner pointer/DPI behavior, shared theme rendering, and a controlled helper renewal test. Actual provider renewal has not been exercised, and tests must not mutate real credentials or history. macOS remains unbuilt. No release package, GitHub Action or paid service was used.
+
+
+## September 11 recent consumption and project continuity extension
+Recent allowance consumption now shares the dock token duration and is presented in Overview, Model advice and the native dock source. The calculation is scoped to the current provider/account/device/window, sums only comparable observed percentage-point changes, distinguishes zero from unavailable, and labels incomplete coverage. The dock's common geometry is now 1120 by 144 logical pixels to retain padding for its new row.
+
+The final frontend checks report zero Svelte/TypeScript errors or warnings; all 17 tests pass and the production bundle builds. Synthetic browser interaction checks passed for 30-minute, 1-hour, 90-minute custom, 1-day and 1-minute durations, persistence between Overview and Model advice, partial coverage, unavailable values and invalid custom input. All four themes fit at 1600, 1100 and 760 pixels; 160% text also passed. No page JavaScript errors were observed. Overview and Model advice screenshots were visually reviewed.
+
+Recent-usage Rust regressions are prepared for interval edges, duplicate readings, account/device isolation, zero, resets, gaps and duration bounds. Changed Rust sources pass syntax parsing only. The new native row, its four-theme render fixtures and the 144-pixel resize geometry have not been compiled, rendered or exercised in the app. These remain part of the pending authorized native checks.
+
+The local gcd-usage-resume, gcd-usage-accounting and gcd-usage-verify-release skills passed the skill creator's validator. The project reference index, status, architecture, data contracts, decisions and release checklist were added; relative documentation links resolve. The updated six-page manual was rendered and every page visually reviewed.
+
+Installed executable metadata and the Git remote were checked on September 11: the installed app is 0.5.3 and main still points to the validated 0.5.3 source commit 2e0f6f5. No 0.5.4 native build, installation, source push or package publication has occurred. Fresh native-build authorization remains pending under AGENTS.md.
+
+
+## 0.5.4 authorized Windows update - September 11, 2026
+This entry supersedes the source-only and pending-build checkpoints earlier on this date. The user authorized the local build, installation, security/performance audit and GitHub source update. Native work used two Cargo workers. Final Windows x64 packaging passed; its optimized compilation took approximately 2 minutes 4 seconds. All 99 Rust tests and 17 frontend tests pass, with zero Svelte/TypeScript errors or warnings and a successful production bundle. One standalone child fixture is intentionally ignored by the normal runner and exercised by its parent helper tests.
+
+Native window-message checks at 96 DPI passed for all four corners, opposite-corner anchoring, persisted scale/position, Hide, tray double-click and Show dock. Hidden state survived a process restart and restored from the tray. Earlier attempts overlapped live mouse input; the recorded trace exposed that interference and the agreed input-free repeat passed. Physical Explorer input and mixed-DPI transitions remain unverified.
+
+The final rebuilt binary passed populated dashboard tests with 5,036 synthetic prompts: one-line history/search, four themes at enlarged text, independent dock sizes, unknown provider values, six token intervals independently matched to SQLite, 7/30/90-day insights, recent-duration bounds and shared-duration persistence. The 30-minute interval had legitimately become empty; longer intervals remained populated. No JavaScript errors were observed. Native command-denial, external-document isolation and popup checks passed again on the final binary.
+
+One hundred hidden native duration-dialog create/change/close cycles left GDI and USER counts unchanged at 13 and 5. Actual native render images were reviewed for the four palettes, padding, recent-consumption row and reddish reset text; dashboard layouts and all six manual pages were also reviewed.
+
+The audit hardened Claude renewal through a narrow child environment, bounded tokens, fixed arguments, sanitized errors, TLS verification, deadlines, process-tree cleanup and rejection of an in-flight account change. Synthetic helper tests passed. No real-account renewal round trip was forced; revocation, missing refresh credentials and compromised local environments remain limitations. Dependency review and upstream maintenance notices are recorded in SECURITY_REVIEW.md.
+
+Performance work clones only visible hover rows, coalesces insights requests and uses scoped indexes. Native diagnostics identified an expensive link-query plan even with zero pending links. The new query starts from link hints and preserves provider/account/turn/time matching. A regression with 5,000 unrelated prompt/request pairs checks bounded SQLite work, latest eligible attribution, excluded identities and unchanged-repeat behavior. The same fixture's link lookup decreased from 11.317 seconds to 0.000097 seconds; unchanged import repetition fell from 9.38 seconds to 0.000851 seconds. Temporary diagnostic code was removed before packaging.
+
+Over 180 seconds with 5,036 synthetic prompts, the dashboard closed and the dock hidden, the final app consumed 0.422 CPU seconds (0.0073% of this 32-logical-CPU host). The sampled peak working set was 41.0 MiB and peak private memory 13.3 MiB; private memory ended at 11.6 MiB. GDI/USER counts stayed at 12/32, handles did not grow, and no child processes remained. Three final-package dashboard cycles also released all WebView children. Ten earlier cycles passed before the lookup-only rebuild. These are bounded synthetic observations, not peak guarantees or proof against every leak.
+
+The 3,375,367-byte NSIS installer exited with code 0 and installed version 0.5.4. Its executable matches the tested release except exactly Tauri's UNK-to-NSS three-byte marker. Before normal startup, settings bytes and history counts were unchanged and the real database passed read-only quick_check. A rollback copy was retained. The installed app was launched normally without test mode or debugging overrides.
+
+The local installer remains private; GitHub delivery contains source and sanitized documentation only. Actions stays disabled and no hosted build or paid service was used. macOS and Windows ARM64 remain unbuilt. These checks do not establish absence of every vulnerability or memory leak.
+
+The normal installed process returned fresh connected readings for both Claude and Codex. This confirms saved-sign-in use after the update, not a forced OAuth refresh round trip. No matching LSASS/RPCRT4 Application Error was found from the start of this update through the final installation check. The underlying host issue remains unresolved.
